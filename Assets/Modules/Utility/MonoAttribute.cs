@@ -9,10 +9,10 @@ public sealed class MonoPInvokeCallbackAttribute : Attribute
 	public MonoPInvokeCallbackAttribute(Type t) {}
 }
 
-public static class MonoPInvokeCallbackAddress
+public static class MonoPInvokeCallback
 {
 	private static readonly Dictionary<Delegate, IntPtr> address = new Dictionary<Delegate, IntPtr>();
-	public static IntPtr From(Delegate fn)
+	public static IntPtr ToIntPtr(this Delegate fn)
 	{
 		IntPtr result;
 		if (!address.TryGetValue(fn, out result))

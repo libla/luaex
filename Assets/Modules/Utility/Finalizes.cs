@@ -1,13 +1,21 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
+using UnityEditor;
 
+[InitializeOnLoad]
 class Finalizes
 {
 	private List<Finalize> lstfinalize;
 	public delegate void Finalize();
 	
 	public static Finalizes Instance;
+
+	static Finalizes()
+	{
+		UnityEngine.Debug.Log(123);
+	}
 
 	public Finalizes()
 	{
