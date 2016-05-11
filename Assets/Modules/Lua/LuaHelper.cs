@@ -101,7 +101,7 @@ namespace Lua
 
 		~State()
 		{
-			Finalizes.Instance.Add(delegate()
+			Finalizes.Add(delegate()
 			{
 				Dispose(false);
 			});
@@ -183,7 +183,7 @@ namespace Lua
 			}
 			~Value()
 			{
-				Finalizes.Instance.Add(delegate()
+				Finalizes.Add(delegate()
 				{
 					Dispose(false);
 				});
@@ -1067,7 +1067,7 @@ namespace Lua
 			}
 			~ValueTypeInstance()
 			{
-				Finalizes.Instance.Add(delegate()
+				Finalizes.Add(delegate()
 				{
 					ValueTypeBuffer<T>.Delete(bufferIndex);
 				});
