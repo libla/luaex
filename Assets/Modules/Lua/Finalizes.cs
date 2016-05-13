@@ -10,7 +10,7 @@ public class Finalizes : Module
 	static Finalizes()
 	{
 		finalizes = new List<Action>();
-		Manager.Update += delegate()
+		Loop.Update += delegate()
 		{
 			if (finalizes.Count > 0)
 			{

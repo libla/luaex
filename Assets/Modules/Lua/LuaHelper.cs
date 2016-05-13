@@ -3,7 +3,7 @@ using System.Text;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
-/*
+
 namespace Lua
 {
 	public class Error : Exception
@@ -337,9 +337,9 @@ namespace Lua
 						refobj = ObjectReference.Alloc(e);
 						enums.Add(e, refobj);
 					}
-					if (API.tolua_pushuserdata(L, refobj.ToIntPtr()))
+					if (API.luaEX_pushuserdata(L, refobj.ToIntPtr()))
 					{
-						if (API.tolua_getmetatable(L, Tools.Type2IntPtr(type)))
+						if (API.luaEX_getmetatable(L, Tools.Type2IntPtr(type)))
 						{
 							API.lua_setmetatable(L, -2);
 						}
@@ -454,9 +454,9 @@ namespace Lua
 				refobj = ObjectReference.Alloc(e);
 				enums.Add(e, refobj);
 			}
-			if (API.tolua_pushuserdata(L, refobj.ToIntPtr()))
+			if (API.luaEX_pushuserdata(L, refobj.ToIntPtr()))
 			{
-				if (API.tolua_getmetatable(L, Tools.Type2IntPtr(type)))
+				if (API.luaEX_getmetatable(L, Tools.Type2IntPtr(type)))
 				{
 					API.lua_setmetatable(L, -2);
 				}
@@ -529,7 +529,7 @@ namespace Lua
 			{
 				return PushType((Function)o);
 			}
-			else if (type.IsSubclassOf(typeof(Table)))
+/*			else if (type.IsSubclassOf(typeof(Table)))
 			{
 				return PushType((Table)o);
 			}
@@ -537,7 +537,7 @@ namespace Lua
 			{
 				return PushType((Thread)o);
 			}
-			if (type.IsValueType)
+*/			if (type.IsValueType)
 			{
 				ObjectReference gch = ObjectReference.Alloc(o);
 				IntPtr ptr = API.lua_newuserdata(L, Marshal.SizeOf(typeof(IntPtr)));
@@ -1520,4 +1520,4 @@ namespace Lua
 			return result;
 		}
 	}
-}*/
+}

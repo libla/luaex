@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Text;
-/*
+
 namespace Lua
 {
 	public sealed class Event
@@ -276,4 +276,4 @@ return event.send
 			}
 		}
 	}
-}*/
+}
