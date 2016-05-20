@@ -101,7 +101,7 @@ namespace Lua
 
 		~State()
 		{
-			Finalizes.Add(delegate()
+			Loop.QueueToMainThread(delegate()
 			{
 				Dispose(false);
 			});
@@ -183,7 +183,7 @@ namespace Lua
 			}
 			~Value()
 			{
-				Finalizes.Add(delegate()
+				Loop.QueueToMainThread(delegate()
 				{
 					Dispose(false);
 				});
@@ -537,7 +537,7 @@ namespace Lua
 			{
 				return PushType((Thread)o);
 			}
-*/			if (type.IsValueType)
+			if (type.IsValueType)
 			{
 				ObjectReference gch = ObjectReference.Alloc(o);
 				IntPtr ptr = API.lua_newuserdata(L, Marshal.SizeOf(typeof(IntPtr)));
@@ -568,7 +568,7 @@ namespace Lua
 			API.lua_pushlightuserdata(L, (IntPtr)info.gch);
 			API.lua_gettable(L, Consts.LUA_REGISTRYINDEX);
 			API.lua_setmetatable(L, -2);
-			return true;
+*/			return true;
 		}
 
 		public bool ToType(int idx, ref int n)
@@ -1067,7 +1067,7 @@ namespace Lua
 			}
 			~ValueTypeInstance()
 			{
-				Finalizes.Add(delegate()
+				Loop.QueueToMainThread(delegate()
 				{
 					ValueTypeBuffer<T>.Delete(bufferIndex);
 				});

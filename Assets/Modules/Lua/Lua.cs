@@ -456,7 +456,8 @@ namespace Lua
         /* adapt functions */
 	    public static int lua_error(IntPtr L)
 	    {
-		    return tolua_error(L, null, -1);
+		    return 1;
+		    //todo return tolua_error(L, null, -1);
 	    }
         public static IntPtr lua_tolstring(IntPtr L, int idx, out int len)
         {
@@ -583,7 +584,8 @@ namespace Lua
         {
 			string msg = string.Format(fmt, argp);
 			byte[] bytes = Encoding.UTF8.GetBytes(msg);
-	        return tolua_error(L, bytes, bytes.Length);
+	        return 1;
+	        //todo return tolua_error(L, bytes, bytes.Length);
         }
         public static int luaL_loadbuffer(IntPtr L, byte[] buff, string name)
         {
