@@ -2,22 +2,28 @@ using System;
 using System.Threading;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityObject = UnityEngine.Object;
 
 namespace Primer
 {
 	public static class Loop
 	{
-		private static List<Action> _actions = new List<Action>();
-		private static List<Action> _actions_ = new List<Action>();
-		private static List<Func<bool>> _actionalways = new List<Func<bool>>();
-		private static readonly Queue<Action> _asyncs = new Queue<Action>();
-		private static readonly List<Exception> _exceptions = new List<Exception>();
+		private static List<Action> actions = new List<Action>();
+		private static List<Action> actions_tmp = new List<Action>();
+		private static readonly SortedDictionary<string, Action> always_actions = new SortedDictionary<string, Action>();
+		private static readonly Dictionary<string, Action> always_actions_async = new Dictionary<string, Action>();
+		private static readonly List<Action> always_actions_order = new List<Action>();
+		private static bool always_actions_invaild = false;
+		private static readonly Queue<Action> async_actions = new Queue<Action>();
+		private static readonly List<Exception> exceptions = new List<Exception>();
+		private static int now_threads = 0;
+		private static bool initialized = false;
+		private static bool current_thread_init = false;
+		private static int current_thread = 0;
+
 		public static int MaxThreads = 8;
-		private static int numThreads = 0;
-		private static int currentThread = 0;
 		public static event Action<Exception> OnException;
 
-		static bool initialized = false;
 		public static void Initialize()
 		{
 			if (!initialized)
@@ -25,58 +31,66 @@ namespace Primer
 				if (!Application.isPlaying)
 					return;
 				initialized = true;
-				currentThread = Thread.CurrentThread.ManagedThreadId;
 				GameObject go = new GameObject("Loop");
+				UnityObject.DontDestroyOnLoad(go);
+				go.hideFlags |= HideFlags.HideInHierarchy;
 				go.AddComponent<Updater>();
 			}
 		}
 
 		public static void Run(Action action)
 		{
-			if (initialized && currentThread == Thread.CurrentThread.ManagedThreadId)
+			if (current_thread_init && current_thread == Thread.CurrentThread.ManagedThreadId)
 			{
 				action();
 			}
 			else
 			{
-				lock (_actions)
+				lock (actions)
 				{
-					_actions.Add(action);
+					actions.Add(action);
 				}
 			}
 		}
 
-		public static void RunAlways(Action action)
+		public static void RunAlways(string name, Action action)
 		{
-			RunAlways(delegate()
+			if (current_thread_init && current_thread == Thread.CurrentThread.ManagedThreadId && always_actions_async.Count == 0)
 			{
-				action();
-				return true;
-			});
+				if (action == null)
+					always_actions.Remove(name);
+				else
+					always_actions[name] = action;
+				always_actions_invaild = true;
+			}
+			else
+			{
+				lock (always_actions_async)
+				{
+					always_actions_async[name] = action;
+				}
+			}
 		}
 
-		public static void RunAlways(Func<bool> action)
+		public static void RemoveRunAlways(string name)
 		{
-			lock (_actionalways)
-			{
-				_actionalways.Add(action);
-			}
+			RunAlways(name, null);
 		}
 
 		public static void RunAsync(Action action)
 		{
 			Initialize();
-			lock (_asyncs)
+			lock (async_actions)
 			{
-				_asyncs.Enqueue(action);
+				async_actions.Enqueue(action);
 			}
 			while (true)
 			{
-				if (numThreads >= MaxThreads)
+				if (now_threads >= MaxThreads)
 					return;
 
-				int oldnumThreads = numThreads;
-				if (Interlocked.CompareExchange(ref numThreads, oldnumThreads + 1, oldnumThreads) == oldnumThreads)
+				int old_threads = now_threads;
+				if (Interlocked.CompareExchange(ref now_threads, old_threads + 1, old_threads) == old_threads)
 					break;
 			}
 			ThreadPool.QueueUserWorkItem(RunAsyncAction);
@@ -87,11 +101,11 @@ namespace Primer
 			while (true)
 			{
 				Action action = null;
-				lock (_asyncs)
+				lock (async_actions)
 				{
-					if (_actions.Count > 0)
+					if (actions.Count > 0)
 					{
-						action = _asyncs.Dequeue();
+						action = async_actions.Dequeue();
 					}
 				}
 				if (action == null)
@@ -102,30 +116,38 @@ namespace Primer
 				}
 				catch (Exception e)
 				{
-					lock (_exceptions)
+					lock (exceptions)
 					{
-						_exceptions.Add(e);
+						exceptions.Add(e);
 					}
 				}
 			}
-			Interlocked.Decrement(ref numThreads);
+			Interlocked.Decrement(ref now_threads);
 		}
 
 		private class Updater : MonoBehaviour
 		{
+			void Start()
+			{
+				current_thread = Thread.CurrentThread.ManagedThreadId;
+				current_thread_init = true;
+			}
 			void Update()
 			{
-				lock (_actions)
+				if (actions.Count > 0)
 				{
-					var tmp = _actions_;
-					_actions_ = _actions;
-					_actions = tmp;
+					lock (actions)
+					{
+						var tmp = actions_tmp;
+						actions_tmp = actions;
+						actions = tmp;
+					}
 				}
-				for (int i = 0, j = _actions_.Count; i < j; ++i)
+				for (int i = 0, j = actions_tmp.Count; i < j; ++i)
 				{
 					try
 					{
-						_actions_[i]();
+						actions_tmp[i]();
 					}
 					catch (Exception e)
 					{
@@ -139,16 +161,58 @@ namespace Primer
 						}
 					}
 				}
-				_actions_.Clear();
-				if (OnException != null)
+				actions_tmp.Clear();
+				if (always_actions_async.Count > 0)
 				{
-					lock (_exceptions)
+					lock (always_actions_async)
 					{
-						for (int i = 0, j = _exceptions.Count; i < j; ++i)
+						foreach (var action in always_actions_async)
+						{
+							always_actions_invaild = true;
+							if (action.Value == null)
+								always_actions.Remove(action.Key);
+							else
+								always_actions[action.Key] = action.Value;
+						}
+						always_actions_async.Clear();
+					}
+				}
+				if (always_actions_invaild)
+				{
+					always_actions_invaild = false;
+					always_actions_order.Clear();
+					foreach (var action in always_actions)
+					{
+						always_actions_order.Add(action.Value);
+					}
+				}
+				for (int i = 0, j = always_actions_order.Count; i < j; ++i)
+				{
+					try
+					{
+						always_actions_order[i]();
+					}
+					catch (Exception e)
+					{
+						try
+						{
+							if (OnException != null)
+								OnException(e);
+						}
+						catch
+						{
+						}
+					}
+				}
+				if (OnException != null && exceptions.Count > 0)
+				{
+					lock (exceptions)
+					{
+						for (int i = 0, j = exceptions.Count; i < j; ++i)
 						{
 							try
 							{
-								OnException(_exceptions[i]);
+								OnException(exceptions[i]);
 							}
 							catch
 							{

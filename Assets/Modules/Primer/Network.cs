@@ -131,7 +131,7 @@ namespace Primer
 	/// <summary>
 	/// 网络管理全局接口
 	/// </summary>
-	public class NetManager
+	public class NetManager : IDisposable
 	{
 		private static bool IsRunning = true;
 
@@ -175,7 +175,7 @@ namespace Primer
 
 		private struct Connecting
 		{
-			public Connected callback;
+			public Action<NetHandler, bool> callback;
 			public NetHandler socket;
 			public bool result;
 		}
@@ -188,6 +188,8 @@ namespace Primer
 
 		public void Listen(int port, Action<NetHandler> callback)
 		{
+			if (!running)
+				throw new ObjectDisposedException(ToString());
 			Init();
 			new Thread(delegate()
 			{
@@ -241,6 +243,8 @@ namespace Primer
 
 		public void Stop(int port)
 		{
+			if (!running)
+				throw new ObjectDisposedException(ToString());
 			lock (listens)
 			{
 				Control ctrl;
@@ -252,8 +256,6 @@ namespace Primer
 			}
 		}
 
-		public delegate void Connected(NetHandler handler, bool success);
-
 		public NetHandler Connect(string ipport, int timeout)
 		{
 			Regex regex = new Regex("^(.+):(\\d+)$", RegexOptions.Singleline);
@@ -262,7 +264,7 @@ namespace Primer
 				Connect(match.Captures[0].Value, Convert.ToInt32(match.Captures[1].Value), timeout);
 		}
 
-		public NetHandler Connect(string ipport, int timeout, Connected callback)
+		public NetHandler Connect(string ipport, int timeout, Action<NetHandler, bool> callback)
 		{
 			Regex regex = new Regex("^(.+):(\\d+)$", RegexOptions.Singleline);
 			Match match = regex.Match(ipport);
@@ -272,6 +274,8 @@ namespace Primer
 
 		public NetHandler Connect(string ip, int port, int timeout)
 		{
+			if (!running)
+				throw new ObjectDisposedException(ToString());
 			Init();
 			NetHandlerImpl socket = new NetHandlerImpl { Manager = this, Blocking = false };
 			try
@@ -307,8 +311,10 @@ namespace Primer
 			return socket;
 		}
 
-		public NetHandler Connect(string ip, int port, int timeout, Connected callback)
+		public NetHandler Connect(string ip, int port, int timeout, Action<NetHandler, bool> callback)
 		{
+			if (!running)
+				throw new ObjectDisposedException(ToString());
 			Init();
 			NetHandlerImpl socket = new NetHandlerImpl { Manager = this, Blocking = false };
 			try
@@ -363,9 +369,14 @@ namespace Primer
 			return socket;
 		}
 
-		~NetManager()
+		public void Dispose()
 		{
 			running = false;
+		}
+
+		public void Close()
+		{
+			Dispose();
 		}
 
 		private void Init()
@@ -515,63 +526,62 @@ namespace Primer
 					errors.Clear();
 				}
 			}).Start();
-		}
-
-		public void Update()
-		{
-			if (connectings.Count > 0)
+			Loop.RunAlways(this.ToString(), delegate()
 			{
-				lock (connectings)
+				if (connectings.Count > 0)
 				{
-					for (int i = 0; i < connectings.Count; i++)
+					lock (connectings)
 					{
-						Connecting connecting = connectings[i];
-						connecting.callback(connecting.socket, connecting.result);
-					}
-					connectings.Clear();
-				}
-			}
-			if (acceptings.Count > 0)
-			{
-				lock (acceptings)
-				{
-					for (int i = 0; i < acceptings.Count; i++)
-					{
-						Accepting accepting = acceptings[i];
-						accepting.action(accepting.socket);
-					}
-					acceptings.Clear();
-				}
-			}
-			if (updates.Count > 0)
-			{
-				lock (updates)
-				{
-					for (int i = 0; i < updates.Count; i++)
-					{
-						UpdateOrder order = updates[i];
-						if (order.socket.listen != null)
+						for (int i = 0; i < connectings.Count; i++)
 						{
-							switch (order.type)
+							Connecting connecting = connectings[i];
+							connecting.callback(connecting.socket, connecting.result);
+						}
+						connectings.Clear();
+					}
+				}
+				if (acceptings.Count > 0)
+				{
+					lock (acceptings)
+					{
+						for (int i = 0; i < acceptings.Count; i++)
+						{
+							Accepting accepting = acceptings[i];
+							accepting.action(accepting.socket);
+						}
+						acceptings.Clear();
+					}
+				}
+				if (updates.Count > 0)
+				{
+					lock (updates)
+					{
+						for (int i = 0; i < updates.Count; i++)
+						{
+							UpdateOrder order = updates[i];
+							if (order.socket.listen != null)
 							{
-								case OrderType.Receive:
-									order.socket.listen.OnReceive(order.socket, order.socket.read_buffer);
-									break;
-								case OrderType.Close:
-									order.socket.listen.OnClose(order.socket);
-									break;
-								case OrderType.Error:
-									order.socket.listen.OnError(order.socket, (Exception)order.param);
-									break;
-								default:
-									throw new ArgumentOutOfRangeException();
+								switch (order.type)
+								{
+									case OrderType.Receive:
+										order.socket.listen.OnReceive(order.socket, order.socket.read_buffer);
+										break;
+									case OrderType.Close:
+										order.socket.listen.OnClose(order.socket);
+										break;
+									case OrderType.Error:
+										order.socket.listen.OnError(order.socket, (Exception)order.param);
+										break;
+									default:
+										throw new ArgumentOutOfRangeException();
+								}
 							}
 						}
+						updates.Clear();
+						receives.Clear();
 					}
-					updates.Clear();
-					receives.Clear();
 				}
-			}
+			});
 		}
 
 		#region 网络连接的具体类

@@ -7,11 +7,12 @@ namespace Primer
 		public static void Init()
 		{
 			Loop.Initialize();
+			Clock.Initialize();
 		}
 
 		public static void Exit()
 		{
-			
+			NetManager.ExitAll();
 		}
 	}
 }
