@@ -9,6 +9,7 @@ namespace Primer
 	{
 		private static List<Action> _actions = new List<Action>();
 		private static List<Action> _actions_ = new List<Action>();
+		private static List<Func<bool>> _actionalways = new List<Func<bool>>();
 		private static readonly Queue<Action> _asyncs = new Queue<Action>();
 		private static readonly List<Exception> _exceptions = new List<Exception>();
 		public static int MaxThreads = 8;
@@ -30,7 +31,7 @@ namespace Primer
 			}
 		}
 
-		public static void QueueToMainThread(Action action)
+		public static void Run(Action action)
 		{
 			if (initialized && currentThread == Thread.CurrentThread.ManagedThreadId)
 			{
@@ -42,6 +43,23 @@ namespace Primer
 				{
 					_actions.Add(action);
 				}
+			}
+		}
+
+		public static void RunAlways(Action action)
+		{
+			RunAlways(delegate()
+			{
+				action();
+				return true;
+			});
+		}
+
+		public static void RunAlways(Func<bool> action)
+		{
+			lock (_actionalways)
+			{
+				_actionalways.Add(action);
 			}
 		}
 

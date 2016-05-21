@@ -3,6 +3,7 @@ using System.Text;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
+using Primer;
 
 namespace Lua
 {
@@ -101,7 +102,7 @@ namespace Lua
 
 		~State()
 		{
-			Loop.QueueToMainThread(delegate()
+			Loop.Run(delegate()
 			{
 				Dispose(false);
 			});
@@ -183,7 +184,7 @@ namespace Lua
 			}
 			~Value()
 			{
-				Loop.QueueToMainThread(delegate()
+				Loop.Run(delegate()
 				{
 					Dispose(false);
 				});
@@ -1067,7 +1068,7 @@ namespace Lua
 			}
 			~ValueTypeInstance()
 			{
-				Loop.QueueToMainThread(delegate()
+				Loop.Run(delegate()
 				{
 					ValueTypeBuffer<T>.Delete(bufferIndex);
 				});
