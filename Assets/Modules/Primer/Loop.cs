@@ -57,7 +57,6 @@ namespace Primer
 		private static List<Action> actions_tmp = new List<Action>();
 		private static readonly SortedDictionary<Schedule, Action> delay_actions = new SortedDictionary<Schedule, Action>(DataCompare.Default);
 		private static readonly Dictionary<Schedule, Action> delay_actions_async = new Dictionary<Schedule, Action>(DataEqualityCompare.Default);
-		private static readonly List<Schedule> delay_actions_remove = new List<Schedule>();
 		private static readonly SortedDictionary<string, Action> always_actions = new SortedDictionary<string, Action>();
 		private static readonly Dictionary<string, Action> always_actions_async = new Dictionary<string, Action>();
 		private static readonly List<Action> always_actions_order = new List<Action>();
@@ -302,10 +301,16 @@ namespace Primer
 					}
 				}
 				long now = Clock.Elapsed;
-				foreach (var action in delay_actions)
+				while (true)
 				{
-					if (action.Key.elapsed > now)
+					var iterator = delay_actions.GetEnumerator();
+					if (!iterator.MoveNext())
 						break;
+					var action = iterator.Current;
+					if (action.Key.elapsed >= now)
+						break;
+					delay_actions.Remove(action.Key);
+					action.Value();
 				}
 				if (exceptions.Count > 0)
 				{
