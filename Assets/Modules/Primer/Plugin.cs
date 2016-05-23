@@ -1,4 +1,5 @@
 using System;
+using UnityEngine;
 
 namespace Primer
 {
@@ -6,12 +7,13 @@ namespace Primer
 	{
 		public static void Init()
 		{
+			Clock.Initialize();
 			Loop.Initialize();
 		}
 
 		public static void Exit()
 		{
-			
+			NetManager.ExitAll();
 		}
 	}
 }

@@ -120,7 +120,7 @@ namespace Primer
 
 		private static string GetLogFormat(string str, DateTime datetime)
 		{
-			return string.Format("[{0}-{1}-{2} {3}:{4}:{5}.{6}]{7}", datetime.Year, datetime.Month, datetime.Day, datetime.Hour, datetime.Minute, datetime.Second, datetime.Millisecond, str);
+			return string.Format("[{0:D4}-{1:D2}-{2:D2} {3:D2}:{4:D2}:{5:D2}.{6:D3}]{7}", datetime.Year, datetime.Month, datetime.Day, datetime.Hour, datetime.Minute, datetime.Second, datetime.Millisecond, str);
 		}
 
 		private static void ExecWrite(HandlerAction action)
