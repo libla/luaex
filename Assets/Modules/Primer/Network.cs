@@ -133,10 +133,23 @@ namespace Primer
 	/// </summary>
 	public class NetManager : IDisposable
 	{
+		public class Settings
+		{
+			public int sendbytes;
+			public uint selectdelay;
+			public NetListener listener;
+			public Settings()
+			{
+				sendbytes = 2 << 24;
+				selectdelay = 5;
+				listener = null;
+			}
+		}
 		private static bool IsRunning = true;
 
 		private bool inited = false;
 		private bool running = true;
+		private Settings settings = null;
 		private readonly List<NetHandlerImpl> sockets = new List<NetHandlerImpl>();
 		private readonly List<NetHandlerImpl> newsockets = new List<NetHandlerImpl>();
 		private readonly List<NetHandlerImpl> deletesockets = new List<NetHandlerImpl>();
@@ -186,6 +199,13 @@ namespace Primer
 			IsRunning = false;
 		}
 
+		public NetManager() : this(new Settings()) { }
+
+		public NetManager(Settings settings)
+		{
+			this.settings = settings;
+		}
+
 		public void Listen(int port, Action<NetHandler> callback)
 		{
 			if (!running)
@@ -219,7 +239,7 @@ namespace Primer
 					}
 					if (!server.Pending())
 						break;
-					NetHandlerImpl socket = new NetHandlerImpl(server.AcceptSocket()) { Manager = this, Blocking = false };
+					NetHandlerImpl socket = new NetHandlerImpl(server.AcceptSocket()) { Manager = this, Blocking = false, listen = settings.listener };
 					lock (acceptings)
 					{
 						acceptings.Add(new Accepting { socket = socket, action = ctrl.action });
@@ -277,7 +297,7 @@ namespace Primer
 			if (!running)
 				throw new ObjectDisposedException(ToString());
 			Init();
-			NetHandlerImpl socket = new NetHandlerImpl { Manager = this, Blocking = false };
+			NetHandlerImpl socket = new NetHandlerImpl { Manager = this, Blocking = false, listen = settings.listener };
 			try
 			{
 				socket.Connect(ip, port);
@@ -316,7 +336,7 @@ namespace Primer
 			if (!running)
 				throw new ObjectDisposedException(ToString());
 			Init();
-			NetHandlerImpl socket = new NetHandlerImpl { Manager = this, Blocking = false };
+			NetHandlerImpl socket = new NetHandlerImpl { Manager = this, Blocking = false, listen = settings.listener };
 			try
 			{
 				socket.Connect(ip, port);
@@ -385,6 +405,7 @@ namespace Primer
 				return;
 
 			inited = true;
+
 			new Thread(delegate()
 			{
 				List<NetHandlerImpl> reads = new List<NetHandlerImpl>();
@@ -440,7 +461,7 @@ namespace Primer
 						if (socket.need_send)
 							writers.Add(socket);
 					}
-					Socket.Select(reads, writers, errors, 5);
+					Socket.Select(reads, writers, errors, (int)settings.selectdelay);
 					for (int i = 0; i < writers.Count; i++)
 					{
 						NetHandlerImpl socket = writers[i];
@@ -598,12 +619,14 @@ namespace Primer
 				: base(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
 			{
 				SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Linger, new LingerOption(false, 0));
+				SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
 			}
 
 			public NetHandlerImpl(Socket socket)
 				: base(socket.DuplicateAndClose(Process.GetCurrentProcess().Id))
 			{
 				SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.Linger, new LingerOption(false, 0));
+				SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.NoDelay, true);
 			}
 
 			public void Destroy()
@@ -628,7 +651,7 @@ namespace Primer
 			{
 				lock (write_buffer)
 				{
-					if (write_buffer.length >= (2 << 24))
+					if (write_buffer.length >= (Manager.settings.sendbytes))
 						return false;
 					need_send = true;
 					write_buffer.Write(bytes, offset, length);
@@ -640,7 +663,7 @@ namespace Primer
 			{
 				lock (write_buffer)
 				{
-					if (write_buffer.length >= (2 << 24))
+					if (write_buffer.length >= (Manager.settings.sendbytes))
 						return false;
 					need_send = true;
 					write_buffer.Write(bytes, length);
