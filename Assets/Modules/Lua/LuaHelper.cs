@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Text;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -39,6 +40,7 @@ namespace Lua
 
 	public class Function
 	{
+		public Type Type { get; private set; }
 		protected delegate Function Func();
 		protected static readonly Dictionary<Type, Func> creates = new Dictionary<Type, Func>();
 
@@ -47,7 +49,9 @@ namespace Lua
 			Func fn;
 			if (!creates.TryGetValue(type, out fn))
 				return null;
-			return fn();
+			Function result = fn();
+			result.Type = type;
+			return result;
 		}
 
 		protected int refidx;
@@ -311,7 +315,7 @@ namespace Lua
 				API.lua_pushnil(L);
 				return true;
 			}
-			return f.Push(L);
+			return PushType(f, f.Type);
 		}
 
 		public bool PushType(object o)
@@ -330,43 +334,7 @@ namespace Lua
 			if (type.IsValueType)
 			{
 				if (type.IsEnum)
-				{
-					ObjectReference refobj;
-					Enum e = o as Enum;
-					if (!enums.TryGetValue(e, out refobj))
-					{
-						refobj = ObjectReference.Alloc(e);
-						enums.Add(e, refobj);
-					}
-					if (API.luaEX_pushuserdata(L, refobj.ToIntPtr()))
-					{
-						if (API.luaEX_getmetatable(L, Tools.Type2IntPtr(type)))
-						{
-							API.lua_setmetatable(L, -2);
-						}
-						else
-						{
-							API.lua_pop(L, 1);
-							switch (Type.GetTypeCode(Enum.GetUnderlyingType(type)))
-							{
-								case TypeCode.SByte:
-								case TypeCode.Int16:
-								case TypeCode.Int32:
-									return PushType((int)((object)e));
-								case TypeCode.Byte:
-								case TypeCode.UInt16:
-								case TypeCode.UInt32:
-									return PushType((uint)((object)e));
-								case TypeCode.UInt64:
-									return PushType((ulong)((object)e));
-								case TypeCode.Int64:
-									return PushType((long)((object)e));
-							}
-							return false;
-						}
-					}
-					return true;
-				}
+					return Tools.PushEnum(this, o as Enum);
 				return PushType(ValueObject<T>.Add(o), typeof(T));
 			}
 			if (o == null)
@@ -447,44 +415,6 @@ namespace Lua
 			return true;
 		}
 
-		private bool PushType(Enum e, Type type)
-		{
-			ObjectReference refobj;
-			if (!enums.TryGetValue(e, out refobj))
-			{
-				refobj = ObjectReference.Alloc(e);
-				enums.Add(e, refobj);
-			}
-			if (API.luaEX_pushuserdata(L, refobj.ToIntPtr()))
-			{
-				if (API.luaEX_getmetatable(L, Tools.Type2IntPtr(type)))
-				{
-					API.lua_setmetatable(L, -2);
-				}
-				else
-				{
-					API.lua_pop(L, 1);
-					switch (Type.GetTypeCode(Enum.GetUnderlyingType(type)))
-					{
-						case TypeCode.SByte:
-						case TypeCode.Int16:
-						case TypeCode.Int32:
-							return PushType((int)((object)e));
-						case TypeCode.Byte:
-						case TypeCode.UInt16:
-						case TypeCode.UInt32:
-							return PushType((uint)((object)e));
-						case TypeCode.UInt64:
-							return PushType((ulong)((object)e));
-						case TypeCode.Int64:
-							return PushType((long)((object)e));
-					}
-					return false;
-				}
-			}
-			return true;
-		}
-
 		private bool PushType(object o, Type type)
 		{
 			if (type.IsArray)
@@ -492,13 +422,11 @@ namespace Lua
 				if (type.GetArrayRank() != 1)
 					return false;
 				type = type.GetElementType();
-				if (type.IsEnum)
-					type = Enum.GetUnderlyingType(type);
 				Array array = o as Array;
 				API.lua_createtable(L, array.Length, 0);
 				for (int i = 0; i < array.Length; ++i)
 				{
-					if (!PushType(array.GetValue(i), type))
+					if (!PushType(array.GetValue(i)))
 					{
 						API.lua_pop(L, 1);
 						return false;
@@ -507,69 +435,119 @@ namespace Lua
 				}
 				return true;
 			}
-			else if (type.IsPrimitive)
+			if (typeof(IList).IsAssignableFrom(type))
+			{
+				IList list = o as IList;
+				API.lua_createtable(L, list.Count, 0);
+				for (int i = 0; i < list.Count; ++i)
+				{
+					if (!PushType(list[i]))
+					{
+						API.lua_pop(L, 1);
+						return false;
+					}
+					API.lua_rawseti(L, -2, i + 1);
+				}
+				return true;
+			}
+			if (typeof(IDictionary).IsAssignableFrom(type))
+			{
+				IDictionary dict = o as IDictionary;
+				API.lua_createtable(L, 0, dict.Count);
+				foreach (DictionaryEntry kv in dict)
+				{
+					if (!PushType(kv.Key))
+					{
+						API.lua_pop(L, 1);
+						return false;
+					}
+					if (!PushType(kv.Value))
+					{
+						API.lua_pop(L, 2);
+						return false;
+					}
+					API.lua_rawset(L, -3);
+				}
+				return true;
+			}
+			if (type.IsEnum)
+			{
+				return Tools.PushEnum(this, o as Enum);
+/* todo				ObjectReference refobj;
+				Enum e = o as Enum;
+				if (!enums.TryGetValue(e, out refobj))
+				{
+					refobj = ObjectReference.Alloc(e);
+					enums.Add(e, refobj);
+				}
+				if (API.luaEX_pushuserdata(L, refobj.ToIntPtr()))
+				{
+					if (API.luaEX_getmetatable(L, Tools.Type2IntPtr(type)))
+					{
+						API.lua_setmetatable(L, -2);
+					}
+					else
+					{
+						API.lua_pop(L, 1);
+						switch (Type.GetTypeCode(Enum.GetUnderlyingType(type)))
+						{
+							case TypeCode.SByte:
+							case TypeCode.Int16:
+							case TypeCode.Int32:
+								return PushType((int)((object)e));
+							case TypeCode.Byte:
+							case TypeCode.UInt16:
+							case TypeCode.UInt32:
+								return PushType((uint)((object)e));
+							case TypeCode.UInt64:
+								return PushType((ulong)((object)e));
+							case TypeCode.Int64:
+								return PushType((long)((object)e));
+						}
+						return false;
+					}
+				}
+				return true;
+*/			}
+			if (type.IsPrimitive)
 			{
 				if (type == typeof(bool))
 					return PushType((bool)o);
-				else if (type == typeof(ulong))
+				if (type == typeof(ulong))
 					return PushType((ulong)o);
-				else if (type == typeof(long))
+				if (type == typeof(long))
 					return PushType((long)o);
-				else
-					return PushType(Convert.ToDouble(o));
+				return PushType(Convert.ToDouble(o));
 			}
-			else if (type == typeof(string))
-			{
+			if (type == typeof(string))
 				return PushType((string)o);
-			}
-			else if (type.IsEnum)
-			{
-				return PushType(o, Enum.GetUnderlyingType(type));
-			}
-			else if (type.IsSubclassOf(typeof(Function)))
-			{
-				return PushType((Function)o);
-			}
-/*			else if (type.IsSubclassOf(typeof(Table)))
-			{
-				return PushType((Table)o);
-			}
-			else if (type.IsSubclassOf(typeof(Thread)))
-			{
-				return PushType((Thread)o);
-			}
 			if (type.IsValueType)
 			{
-				ObjectReference gch = ObjectReference.Alloc(o);
-				IntPtr ptr = API.lua_newuserdata(L, Marshal.SizeOf(typeof(IntPtr)));
-				Marshal.WriteIntPtr(ptr, (IntPtr)gch);
+				if (o.GetType() == type)
+					return PushType(ValueObject.Add(type, o), type);
 			}
-			else
+			ObjectReference gch;
+			if (!objects.TryGetValue(o, out gch))
 			{
-				ObjectReference gch;
-				if (objects.TryGetValue(o, out gch))
-				{
-					getweaktable();
-					API.lua_pushlightuserdata(L, (IntPtr)gch);
-					API.lua_gettable(L, -2);
-					API.lua_replace(L, -2);
-					return true;
-				}
 				gch = ObjectReference.Alloc(o);
 				objects.Add(o, gch);
+			}
+			API.getweaktable(L);
+			API.lua_pushlightuserdata(L, (IntPtr)gch);
+			API.lua_gettable(L, -2);
+			if (API.lua_isnil(L, -1))
+			{
+				API.lua_pop(L, 1);
 				IntPtr ptr = API.lua_newuserdata(L, Marshal.SizeOf(typeof(IntPtr)));
 				Marshal.WriteIntPtr(ptr, (IntPtr)gch);
-				getweaktable();
 				API.lua_pushlightuserdata(L, (IntPtr)gch);
-				API.lua_pushvalue(L, -3);
-				API.lua_settable(L, -3);
-				API.lua_pop(L, 1);
+				API.lua_pushvalue(L, -2);
+				API.lua_settable(L, -4);
+				if (API.luaEX_getmetatable(L, Tools.Type2IntPtr(type)))
+					API.lua_setmetatable(L, -2);
 			}
-			TypeInfo info = gettypeof(type);
-			API.lua_pushlightuserdata(L, (IntPtr)info.gch);
-			API.lua_gettable(L, Consts.LUA_REGISTRYINDEX);
-			API.lua_setmetatable(L, -2);
-*/			return true;
+			API.lua_replace(L, -2);
+			return true;
 		}
 
 		public bool ToType(int idx, ref int n)
@@ -697,6 +675,22 @@ namespace Lua
 			return true;
 		}
 
+		public bool ToType<T>(int idx, ref T t)
+		{
+			object o = null;
+			if (!ToType(idx, ref o, typeof(T)))
+				return false;
+			if (o == null)
+			{
+				t = default(T);
+				return true;
+			}
+			if (!(o is T))
+				return false;
+			t = (T)o;
+			return true;
+		}
+
 		public bool ToType<T>(int idx, ref T[] lst)
 		{
 			if (!API.lua_istable(L, idx))
@@ -781,22 +775,6 @@ namespace Lua
 				lst[key] = value;
 				API.lua_pop(L, 1);
 			}
-			return true;
-		}
-
-		public bool ToType<T>(int idx, ref T t)
-		{
-			object o = null;
-			if (!ToType(idx, ref o, typeof(T)))
-				return false;
-			if (o == null)
-			{
-				t = default(T);
-				return true;
-			}
-			if (!(o is T))
-				return false;
-			t = (T)o;
 			return true;
 		}
 
@@ -1519,6 +1497,67 @@ namespace Lua
 			if (!lua_totype(L, idx, ref result))
 				luaL_typerror(L, idx, "");
 			return result;
+		}
+
+		private static IntPtr weaktablekey = IntPtr.Zero;
+		public static void getweaktable(IntPtr L)
+		{
+			if (weaktablekey == IntPtr.Zero)
+				weaktablekey = Marshal.AllocHGlobal(1);
+			lua_pushlightuserdata(L, weaktablekey);
+			lua_rawget(L, Consts.LUA_REGISTRYINDEX);
+			if (lua_isnil(L, -1))
+			{
+				lua_pop(L, 1);
+				lua_newtable(L);
+				lua_pushlightuserdata(L, weaktablekey);
+				lua_pushvalue(L, -2);
+				lua_rawset(L, Consts.LUA_REGISTRYINDEX);
+				lua_createtable(L, 1, 0);
+				lua_pushliteral(L, "__mode");
+				lua_pushliteral(L, "v");
+				lua_settable(L, -3);
+				lua_setmetatable(L, -2);
+			}
+		}
+	}
+
+	public static partial class Tools
+	{
+		private static readonly Dictionary<Type, Func<State, Enum, bool>> pushs = new Dictionary<Type, Func<State, Enum, bool>>();
+		public static void RegPushEnum(Type t, Func<State, Enum, bool> f)
+		{
+			pushs[t] = f;
+		}
+
+		public static bool PushEnum(State s, Enum e)
+		{
+			Type t = e.GetType();
+			Func<State, Enum, bool> f;
+			if (pushs.TryGetValue(t, out f))
+			{
+				if (!f(s, e))
+					return false;
+				if (API.luaEX_getmetatable(s, Tools.Type2IntPtr(t)))
+					API.lua_setmetatable(s, -2);
+				return true;
+			}
+			switch (Type.GetTypeCode(Enum.GetUnderlyingType(t)))
+			{
+				case TypeCode.SByte:
+				case TypeCode.Int16:
+				case TypeCode.Int32:
+					return s.PushType((int)(object)e);
+				case TypeCode.Byte:
+				case TypeCode.UInt16:
+				case TypeCode.UInt32:
+					return s.PushType((uint)(object)e);
+				case TypeCode.UInt64:
+					return s.PushType((ulong)(object)e);
+				case TypeCode.Int64:
+					return s.PushType((long)(object)e);
+			}
+			return false;
 		}
 	}
 }

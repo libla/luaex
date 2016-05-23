@@ -172,11 +172,39 @@ namespace Lua
 		}
 	}
 
-	public class ValueObject<T>
+	public abstract class ValueObject
+	{
+		protected static readonly Dictionary<Type, Func<object, ValueObject>> creates = new Dictionary<Type, Func<object, ValueObject>>();
+		public abstract void Release();
+
+		public static ValueObject Add(Type type, object o)
+		{
+			Func<object, ValueObject> fn;
+			if (creates.TryGetValue(type, out fn))
+				return fn(o);
+			throw new NotImplementedException(type.ToString());
+		}
+
+		public static void Release(ValueObject obj)
+		{
+			if (obj != null)
+				obj.Release();
+		}
+	}
+
+	public class ValueObject<T> : ValueObject
 	{
 		private static readonly Stack<ValueObject<T>> list = new Stack<ValueObject<T>>();
 
 		public T Target;
+
+		static ValueObject()
+		{
+			creates.Add(typeof(T), delegate(object o)
+			{
+				return Add((T)o);
+			});
+		}
 
 		public static ValueObject<T> Add(T t)
 		{
@@ -185,19 +213,13 @@ namespace Lua
 			return result;
 		}
 
-		public static ValueObject<T> Add()
+		public new static ValueObject<T> Add()
 		{
 			ValueObject<T> result = list.Count == 0 ? new ValueObject<T>() : list.Pop();
 			return result;
 		}
 
-		public static void Release(ValueObject<T> obj)
-		{
-			if (obj != null)
-				obj.Release();
-		}
-
-		public void Release()
+		public override void Release()
 		{
 			list.Push(this);
 		}
