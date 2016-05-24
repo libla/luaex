@@ -172,6 +172,44 @@ namespace Lua
 		}
 	}
 
+	public class EnumObject
+	{
+		protected static readonly Dictionary<Type, Func<Enum, EnumObject>> creates = new Dictionary<Type, Func<Enum, EnumObject>>();
+
+		public static EnumObject Add(Type type, Enum e)
+		{
+			Func<Enum, EnumObject> fn;
+			if (creates.TryGetValue(type, out fn))
+				return fn(e);
+			throw new NotImplementedException(RunTimeType.Name[type]);
+		}
+	}
+
+	public class EnumObject<T> : EnumObject
+	{
+		private static readonly Dictionary<T, EnumObject<T>> dict = new Dictionary<T, EnumObject<T>>();
+
+		public T Target;
+
+		static EnumObject()
+		{
+			creates.Add(typeof(T), delegate(Enum o)
+			{
+				return (EnumObject<T>)(T)(object)o;
+			});
+		}
+
+		public static explicit operator EnumObject<T>(T t)
+		{
+			EnumObject<T> result;
+			if (dict.TryGetValue(t, out result))
+				return result;
+			result = new EnumObject<T> { Target = t };
+			dict.Add(t, result);
+			return result;
+		}
+	}
+
 	public abstract class ValueObject
 	{
 		protected static readonly Dictionary<Type, Func<object, ValueObject>> creates = new Dictionary<Type, Func<object, ValueObject>>();
@@ -182,7 +220,7 @@ namespace Lua
 			Func<object, ValueObject> fn;
 			if (creates.TryGetValue(type, out fn))
 				return fn(o);
-			throw new NotImplementedException(type.ToString());
+			throw new NotImplementedException(RunTimeType.Name[type]);
 		}
 
 		public static void Release(ValueObject obj)

@@ -38,60 +38,12 @@ namespace Lua
 		}
 	}
 
-	public class Function
-	{
-		public Type Type { get; private set; }
-		protected delegate Function Func();
-		protected static readonly Dictionary<Type, Func> creates = new Dictionary<Type, Func>();
-
-		public static Function Create(Type type)
-		{
-			Func fn;
-			if (!creates.TryGetValue(type, out fn))
-				return null;
-			Function result = fn();
-			result.Type = type;
-			return result;
-		}
-
-		protected int refidx;
-		protected State refstate;
-
-		protected Function()
-		{
-			refidx = Consts.LUA_NOREF;
-			refstate = null;
-		}
-		public bool Load(IntPtr L, int idx)
-		{
-			if (!API.lua_isfunction(L, idx))
-				return false;
-			if (refstate != null)
-				API.lua_unref(L, refidx);
-			refstate = L;
-			API.lua_pushvalue(L, idx);
-			refidx = API.lua_ref(L);
-			return true;
-		}
-
-		public bool Push(IntPtr L)
-		{
-			if (refstate != L)
-				return false;
-			API.lua_getref(L, refidx);
-			if (!API.lua_isnil(L, -1))
-				return true;
-			API.lua_pop(L, 1);
-			return false;
-		}
-	}
-
 	public sealed class State : IDisposable
 	{
 		private IntPtr L;
 		private readonly Dictionary<object, ObjectReference> objects;
 		private readonly Dictionary<Enum, ObjectReference> enums;
-		private static readonly List<Hold> holds = new List<Hold>();
+		private static readonly Stack<Hold> holds = new Stack<Hold>();
 
 		public State()
 		{
@@ -149,14 +101,12 @@ namespace Lua
 
 		public Hold Backup(IntPtr L)
 		{
-			if (holds.Count == 0)
-			{
-				return new Hold(L);
-			}
-			int index = holds.Count - 1;
-			Hold hold = holds[index];
-			holds.RemoveAt(index);
-			return hold;
+			return holds.Count == 0 ? new Hold(L) : holds.Pop();
+		}
+
+		public Hold Backup()
+		{
+			return Backup(L);
 		}
 
 		public sealed class Hold : IDisposable
@@ -171,53 +121,7 @@ namespace Lua
 			public void Dispose()
 			{
 				API.lua_settop(l, top);
-				holds.Add(this);
-			}
-		}
-
-		public class Value : IDisposable
-		{
-			protected int refidx;
-			protected State refstate;
-
-			protected Value(IntPtr L, int idx)
-			{
-				refstate = L;
-				API.lua_pushvalue(L, idx);
-				refidx = API.lua_ref(L);
-			}
-			~Value()
-			{
-				Loop.Run(delegate()
-				{
-					Dispose(false);
-				});
-			}
-			public void Dispose()
-			{
-				Dispose(true);
-				GC.SuppressFinalize(this);
-			}
-			public void Push(IntPtr L)
-			{
-				if (API.lua_host(L) == refstate.L)
-				{
-					API.lua_getref(L, refidx);
-				}
-				else
-				{
-					API.lua_pushnil(L);
-				}
-			}
-			private void Dispose(bool force)
-			{
-				IntPtr L = refstate.L;
-				if (L == IntPtr.Zero)
-				{
-					return;
-				}
-				API.lua_unref(L, refidx);
-				refidx = Consts.LUA_NOREF;
+				holds.Push(this);
 			}
 		}
 
@@ -306,16 +210,6 @@ namespace Lua
 		public bool PushType(long l)
 		{
 			return PushType((ulong)l);
-		}
-
-		public bool PushType(Function f)
-		{
-			if (f == null)
-			{
-				API.lua_pushnil(L);
-				return true;
-			}
-			return PushType(f, f.Type);
 		}
 
 		public bool PushType(object o)
@@ -532,21 +426,11 @@ namespace Lua
 				gch = ObjectReference.Alloc(o);
 				objects.Add(o, gch);
 			}
-			API.getweaktable(L);
-			API.lua_pushlightuserdata(L, (IntPtr)gch);
-			API.lua_gettable(L, -2);
-			if (API.lua_isnil(L, -1))
+			if (API.luaEX_pushuserdata(L, (IntPtr)gch))
 			{
-				API.lua_pop(L, 1);
-				IntPtr ptr = API.lua_newuserdata(L, Marshal.SizeOf(typeof(IntPtr)));
-				Marshal.WriteIntPtr(ptr, (IntPtr)gch);
-				API.lua_pushlightuserdata(L, (IntPtr)gch);
-				API.lua_pushvalue(L, -2);
-				API.lua_settable(L, -4);
 				if (API.luaEX_getmetatable(L, Tools.Type2IntPtr(type)))
 					API.lua_setmetatable(L, -2);
 			}
-			API.lua_replace(L, -2);
 			return true;
 		}
 
@@ -677,17 +561,35 @@ namespace Lua
 
 		public bool ToType<T>(int idx, ref T t)
 		{
-			object o = null;
-			if (!ToType(idx, ref o, typeof(T)))
+			Type type = typeof(T);
+			IntPtr ptr = API.lua_touserdata(L, idx);
+			if (ptr == IntPtr.Zero)
 				return false;
-			if (o == null)
+			ObjectReference gch = (ObjectReference)Marshal.ReadIntPtr(ptr);
+			if (type.IsValueType)
+			{
+				if (type.IsEnum)
+				{
+					EnumObject<T> e = gch.Target as EnumObject<T>;
+					if (e == null)
+						return false;
+					t = e.Target;
+					return true;
+				}
+				ValueObject<T> v = gch.Target as ValueObject<T>;
+				if (v == null)
+					return false;
+				t = v.Target;
+				return true;
+			}
+			if (gch.Target == null)
 			{
 				t = default(T);
 				return true;
 			}
-			if (!(o is T))
+			if (!(gch.Target is T))
 				return false;
-			t = (T)o;
+			t = (T)gch.Target;
 			return true;
 		}
 
@@ -948,16 +850,6 @@ namespace Lua
 			{
 				return ToType(idx, ref o, Enum.GetUnderlyingType(type));
 			}
-			if (type.BaseType == typeof(Function))
-			{
-				Function f = Function.Create(type);
-				if (f == null)
-					return false;
-				if (!f.Load(L, idx))
-					return false;
-				o = f;
-				return true;
-			}
 			if (API.lua_isnoneornil(L, idx))
 			{
 				o = null;
@@ -1072,8 +964,6 @@ namespace Lua
 
 	public static partial class API
 	{
-		private static Dictionary<object, ObjectReference> objects = new Dictionary<object, ObjectReference>();
-		private static Dictionary<Enum, ObjectReference> enums = new Dictionary<Enum, ObjectReference>();
 		public static void lua_pushtype(IntPtr L, Enum e)
 		{
 		}
@@ -1498,43 +1388,60 @@ namespace Lua
 				luaL_typerror(L, idx, "");
 			return result;
 		}
-
-		private static IntPtr weaktablekey = IntPtr.Zero;
-		public static void getweaktable(IntPtr L)
-		{
-			if (weaktablekey == IntPtr.Zero)
-				weaktablekey = Marshal.AllocHGlobal(1);
-			lua_pushlightuserdata(L, weaktablekey);
-			lua_rawget(L, Consts.LUA_REGISTRYINDEX);
-			if (lua_isnil(L, -1))
-			{
-				lua_pop(L, 1);
-				lua_newtable(L);
-				lua_pushlightuserdata(L, weaktablekey);
-				lua_pushvalue(L, -2);
-				lua_rawset(L, Consts.LUA_REGISTRYINDEX);
-				lua_createtable(L, 1, 0);
-				lua_pushliteral(L, "__mode");
-				lua_pushliteral(L, "v");
-				lua_settable(L, -3);
-				lua_setmetatable(L, -2);
-			}
-		}
 	}
 
 	public static partial class Tools
 	{
-		private static readonly Dictionary<Type, Func<State, Enum, bool>> pushs = new Dictionary<Type, Func<State, Enum, bool>>();
-		public static void RegPushEnum(Type t, Func<State, Enum, bool> f)
+		private static readonly Dictionary<Type, Func<Function, Delegate>> createdelegates = new Dictionary<Type, Func<Function, Delegate>>();
+		private static readonly Dictionary<Type, Func<State, Enum, bool>> dictenums = new Dictionary<Type, Func<State, Enum, bool>>();
+
+		private class Function
 		{
-			pushs[t] = f;
+			private readonly int refidx;
+			private readonly State refstate;
+
+			public Function(IntPtr L, int index)
+			{
+				if (!API.lua_isfunction(L, index))
+					throw new InvalidCastException();
+				refstate = L;
+				API.lua_pushvalue(L, index);
+				refidx = API.lua_ref(L);
+			}
+
+			~Function()
+			{
+				Loop.Run(delegate()
+				{
+					API.lua_unref(refstate, refidx);
+				});
+			}
+
+			public bool Push(IntPtr L)
+			{
+				if (API.lua_getrefers(refstate) != API.lua_getrefers(L))
+					return false;
+				API.lua_getref(L, refidx);
+				if (!API.lua_isnil(L, -1))
+					return true;
+				API.lua_pop(L, 1);
+				return false;
+			}
+		}
+
+		public static Delegate CreateDelegate(Type type, IntPtr L, int index)
+		{
+			Func<Function, Delegate> f;
+			if (!createdelegates.TryGetValue(type, out f))
+				throw new NotImplementedException(RunTimeType.Name[type]);
+			return f(new Function(L, index));
 		}
 
 		public static bool PushEnum(State s, Enum e)
 		{
 			Type t = e.GetType();
 			Func<State, Enum, bool> f;
-			if (pushs.TryGetValue(t, out f))
+			if (dictenums.TryGetValue(t, out f))
 			{
 				if (!f(s, e))
 					return false;
