@@ -222,14 +222,30 @@ namespace Lua
 			return PushType(o, o.GetType());
 		}
 
+		public bool PushType(byte[] bytes)
+		{
+			if (bytes == null)
+			{
+				API.lua_pushnil(L);
+				return true;
+			}
+			API.lua_pushlstring(L, bytes);
+			return true;
+		}
+
+		public bool PushType(Array array)
+		{// todo
+			return false;
+		}
+
 		public bool PushType<T>(T o)
 		{
 			Type type = typeof(T);
 			if (type.IsValueType)
 			{
 				if (type.IsEnum)
-					return Tools.PushEnum(this, o as Enum);
-				return PushType(ValueObject<T>.Add(o), typeof(T));
+					return PushEnum(o);
+				return PushValue(o);
 			}
 			if (o == null)
 			{
@@ -239,73 +255,15 @@ namespace Lua
 			return PushType(o, o.GetType());
 		}
 
-		public bool PushType<T>(T[] t)
+		private bool PushEnum<T>(T t)
 		{
-			if (t == null)
-			{
-				API.lua_pushnil(L);
-				return true;
-			}
-			Type type = typeof(T);
-			int top = API.lua_gettop(L);
-			API.lua_createtable(L, t.Length, 0);
-			for (int i = 0, j = t.Length; i < j; ++i)
-			{
-				if (!PushType(t[i]))
-				{
-					API.lua_settop(L, top);
-					return false;
-				}
-				API.lua_rawseti(L, -2, i + 1);
-			}
+			PushUserData((EnumObject<T>)t, typeof(T));
 			return true;
 		}
 
-		public bool PushType<T>(IList<T> t)
+		private bool PushValue<T>(T t)
 		{
-			if (t == null)
-			{
-				API.lua_pushnil(L);
-				return true;
-			}
-			Type type = typeof(T);
-			int top = API.lua_gettop(L);
-			API.lua_createtable(L, t.Count, 0);
-			for (int i = 0, j = t.Count; i < j; ++i)
-			{
-				if (!PushType(t[i]))
-				{
-					API.lua_settop(L, top);
-					return false;
-				}
-				API.lua_rawseti(L, -2, i + 1);
-			}
-			return true;
-		}
-
-		public bool PushType<TKey, TValue>(IDictionary<TKey, TValue> t)
-		{
-			if (t == null)
-			{
-				API.lua_pushnil(L);
-				return true;
-			}
-			int top = API.lua_gettop(L);
-			API.lua_createtable(L, 0, t.Count);
-			foreach (var kv in t)
-			{
-				if (!PushType(kv.Key))
-				{
-					API.lua_settop(L, top);
-					return false;
-				}
-				if (!PushType(kv.Value))
-				{
-					API.lua_settop(L, top);
-					return false;
-				}
-				API.lua_rawset(L, -3);
-			}
+			PushUserData(ValueObject<T>.Add(t), typeof(T));
 			return true;
 		}
 
@@ -313,21 +271,9 @@ namespace Lua
 		{
 			if (type.IsArray)
 			{
-				if (type.GetArrayRank() != 1)
-					return false;
-				type = type.GetElementType();
-				Array array = o as Array;
-				API.lua_createtable(L, array.Length, 0);
-				for (int i = 0; i < array.Length; ++i)
-				{
-					if (!PushType(array.GetValue(i)))
-					{
-						API.lua_pop(L, 1);
-						return false;
-					}
-					API.lua_rawseti(L, -2, i + 1);
-				}
-				return true;
+				if (type.GetArrayRank() == 1 && type.GetElementType() == typeof(byte))
+					return PushType(o as byte[]);
+				return PushType(o as Array);
 			}
 			if (typeof(IList).IsAssignableFrom(type))
 			{
@@ -364,45 +310,6 @@ namespace Lua
 				}
 				return true;
 			}
-			if (type.IsEnum)
-			{
-				return Tools.PushEnum(this, o as Enum);
-/* todo				ObjectReference refobj;
-				Enum e = o as Enum;
-				if (!enums.TryGetValue(e, out refobj))
-				{
-					refobj = ObjectReference.Alloc(e);
-					enums.Add(e, refobj);
-				}
-				if (API.luaEX_pushuserdata(L, refobj.ToIntPtr()))
-				{
-					if (API.luaEX_getmetatable(L, Tools.Type2IntPtr(type)))
-					{
-						API.lua_setmetatable(L, -2);
-					}
-					else
-					{
-						API.lua_pop(L, 1);
-						switch (Type.GetTypeCode(Enum.GetUnderlyingType(type)))
-						{
-							case TypeCode.SByte:
-							case TypeCode.Int16:
-							case TypeCode.Int32:
-								return PushType((int)((object)e));
-							case TypeCode.Byte:
-							case TypeCode.UInt16:
-							case TypeCode.UInt32:
-								return PushType((uint)((object)e));
-							case TypeCode.UInt64:
-								return PushType((ulong)((object)e));
-							case TypeCode.Int64:
-								return PushType((long)((object)e));
-						}
-						return false;
-					}
-				}
-				return true;
-*/			}
 			if (type.IsPrimitive)
 			{
 				if (type == typeof(bool))
@@ -417,9 +324,42 @@ namespace Lua
 				return PushType((string)o);
 			if (type.IsValueType)
 			{
-				if (o.GetType() == type)
-					return PushType(ValueObject.Add(type, o), type);
+				if (type.IsEnum)
+				{
+					try
+					{
+						PushUserData(EnumObject.Add(type, (Enum)o), type);
+						return true;
+					}
+					catch (NotImplementedException)
+					{
+						switch (Type.GetTypeCode(Enum.GetUnderlyingType(type)))
+						{
+							case TypeCode.SByte:
+							case TypeCode.Int16:
+							case TypeCode.Int32:
+								return PushType((int)o);
+							case TypeCode.Byte:
+							case TypeCode.UInt16:
+							case TypeCode.UInt32:
+								return PushType((uint)o);
+							case TypeCode.UInt64:
+								return PushType((ulong)o);
+							case TypeCode.Int64:
+								return PushType((long)o);
+						}
+					}
+					return true;
+				}
+				PushUserData(ValueObject.Add(type, o), type);
+				return true;
 			}
+			PushUserData(o, type);
+			return true;
+		}
+
+		private void PushUserData(object o, Type t)
+		{
 			ObjectReference gch;
 			if (!objects.TryGetValue(o, out gch))
 			{
@@ -428,10 +368,9 @@ namespace Lua
 			}
 			if (API.luaEX_pushuserdata(L, (IntPtr)gch))
 			{
-				if (API.luaEX_getmetatable(L, Tools.Type2IntPtr(type)))
+				if (API.luaEX_getmetatable(L, Tools.Type2IntPtr(t)))
 					API.lua_setmetatable(L, -2);
 			}
-			return true;
 		}
 
 		public bool ToType(int idx, ref int n)
@@ -559,124 +498,78 @@ namespace Lua
 			return true;
 		}
 
+		public bool ToType(int idx, ref byte[] bytes)
+		{
+			if (API.lua_isstring(L, idx))
+			{
+				int len;
+				IntPtr ptr = API.lua_tolstring(L, idx, out len);
+				bytes = new byte[len];
+				Marshal.Copy(ptr, bytes, 0, len);
+				return true;
+			}
+			return false;
+		}
+
+		public bool ToType<T>(int idx, ref T[] t)
+		{
+			Array array = null;
+			if (!ToType(idx, ref array, typeof(T[])))
+				return false;
+			try
+			{
+				t = (T[])array;
+				return true;
+			}
+			catch (InvalidCastException)
+			{
+				return false;
+			}
+		}
+
+		private bool ToType(int idx, ref Array array, Type type)
+		{// todo
+			return false;
+		}
+
 		public bool ToType<T>(int idx, ref T t)
 		{
 			Type type = typeof(T);
-			IntPtr ptr = API.lua_touserdata(L, idx);
-			if (ptr == IntPtr.Zero)
-				return false;
-			ObjectReference gch = (ObjectReference)Marshal.ReadIntPtr(ptr);
 			if (type.IsValueType)
 			{
+				object o = null;
+				if (!ToType(idx, ref o, typeof(object)))
+					return false;
 				if (type.IsEnum)
 				{
-					EnumObject<T> e = gch.Target as EnumObject<T>;
+					EnumObject<T> e = o as EnumObject<T>;
 					if (e == null)
 						return false;
 					t = e.Target;
 					return true;
 				}
-				ValueObject<T> v = gch.Target as ValueObject<T>;
+				ValueObject<T> v = o as ValueObject<T>;
 				if (v == null)
 					return false;
 				t = v.Target;
 				return true;
 			}
-			if (gch.Target == null)
+			else
 			{
-				t = default(T);
+				object o = null;
+				if (!ToType(idx, ref o, type))
+					return false;
+				t = (T)o;
 				return true;
 			}
-			if (!(gch.Target is T))
-				return false;
-			t = (T)gch.Target;
-			return true;
 		}
 
-		public bool ToType<T>(int idx, ref T[] lst)
+		public bool ToType<T>(int idx, ref ValueObject<T> t) where T : struct
 		{
-			if (!API.lua_istable(L, idx))
+			object o = null;
+			if (!ToType(idx, ref o, typeof(ValueObject<T>)))
 				return false;
-			int len = API.lua_objlen(L, idx).ToInt32();
-			if (lst == null)
-			{
-				lst = new T[len];
-			}
-			else
-			{
-				int nlen = lst.Length;
-				if (len > nlen)
-					len = nlen;
-			}
-			T t = default(T);
-			idx = API.luaL_absindex(L, idx);
-			for (int i = 0; i < len; ++i)
-			{
-				API.lua_pushinteger(L, i + 1);
-				API.lua_gettable(L, idx);
-				if (!ToType(-1, ref t))
-				{
-					API.lua_pop(L, 1);
-					return false;
-				}
-				API.lua_pop(L, 1);
-				lst[i] = t;
-			}
-			return true;
-		}
-
-		public bool ToType<T>(int idx, ref IList<T> lst)
-		{
-			if (!API.lua_istable(L, idx))
-				return false;
-			int len = API.lua_objlen(L, idx).ToInt32();
-			if (lst == null)
-				lst = new List<T>();
-			else
-				lst.Clear();
-			T t = default(T);
-			idx = API.luaL_absindex(L, idx);
-			for (int i = 0; i < len; ++i)
-			{
-				API.lua_pushinteger(L, i + 1);
-				API.lua_gettable(L, idx);
-				if (!ToType(-1, ref t))
-				{
-					API.lua_pop(L, 1);
-					return false;
-				}
-				API.lua_pop(L, 1);
-				lst.Add(t);
-			}
-			return true;
-		}
-
-		public bool ToType<TKey, TValue>(int idx, ref IDictionary<TKey, TValue> lst)
-		{
-			if (!API.lua_istable(L, idx))
-				return false;
-			int len = API.lua_objlen(L, idx).ToInt32();
-			if (lst == null)
-				lst = new Dictionary<TKey, TValue>();
-			TKey key = default(TKey);
-			TValue value = default(TValue);
-			idx = API.luaL_absindex(L, idx);
-			API.lua_pushnil(L);
-			while (API.lua_next(L, idx))
-			{
-				if (!ToType(-2, ref key))
-				{
-					API.lua_pop(L, 2);
-					return false;
-				}
-				if (!ToType(-1, ref value))
-				{
-					API.lua_pop(L, 2);
-					return false;
-				}
-				lst[key] = value;
-				API.lua_pop(L, 1);
-			}
+			t = (ValueObject<T>)o;
 			return true;
 		}
 
@@ -696,45 +589,53 @@ namespace Lua
 				case Consts.LUA_TSTRING:
 					o = API.lua_tostring(L, idx);
 					return true;
-				case Consts.LUA_TLIGHTUSERDATA:
-				case Consts.LUA_TUSERDATA:
-					ObjectReference gch = (ObjectReference)API.lua_touserdata(L, idx);
-					o = gch.Target;
+				case Consts.LUA_TTABLE:
 					return true;
+				case Consts.LUA_TLIGHTUSERDATA:
+					{
+						ObjectReference gch = (ObjectReference)API.lua_touserdata(L, idx);
+						o = gch.Target;
+					}
+					break;
+				case Consts.LUA_TUSERDATA:
+					{
+						IntPtr ptr = API.lua_touserdata(L, idx);
+						ObjectReference gch = (ObjectReference)Marshal.ReadIntPtr(ptr);
+						o = gch.Target;
+					}
+					break;
+				default:
+					return false;
 			}
-			return false;
+			EnumObject e = o as EnumObject;
+			if (e != null)
+			{
+				o = e.GetTarget();
+			}
+			else
+			{
+				ValueObject v = o as ValueObject;
+				if (v != null)
+					o = v.GetTarget();
+			}
+			return true;
 		}
 
 		private bool ToType(int idx, ref object o, Type type)
 		{
 			if (type.IsArray)
 			{
-				if (type.GetArrayRank() != 1 || !API.lua_istable(L, idx))
-					return false;
-
-				type = type.GetElementType();
-				int len = API.lua_objlen(L, idx).ToInt32();
-				Array array = Array.CreateInstance(type, len);
-				object item = null;
-				for (int i = 0; i < len; ++i)
+				if (type.GetArrayRank() == 1 && type.GetElementType() == typeof(byte))
 				{
-					API.lua_rawgeti(L, idx, i + 1);
-					if (!ToType(-1, ref item, type))
-					{
-						API.lua_pop(L, 1);
+					byte[] bytes = null;
+					if (!ToType(idx, ref bytes))
 						return false;
-					}
-					try
-					{
-						array.SetValue(item, i);
-					}
-					catch
-					{
-						API.lua_pop(L, 1);
-						return false;
-					}
-					API.lua_pop(L, 1);
+					o = bytes;
+					return true;
 				}
+				Array array = null;
+				if (!ToType(idx, ref array, type))
+					return false;
 				o = array;
 				return true;
 			}
@@ -846,554 +747,63 @@ namespace Lua
 				o = s;
 				return true;
 			}
-			if (type.IsEnum)
-			{
-				return ToType(idx, ref o, Enum.GetUnderlyingType(type));
-			}
-			if (API.lua_isnoneornil(L, idx))
-			{
-				o = null;
-				return true;
-			}
-			switch (API.lua_type(L, idx))
-			{
-				case Consts.LUA_TBOOLEAN:
-					o = API.lua_toboolean(L, idx);
-					return true;
-				case Consts.LUA_TNUMBER:
-					o = API.lua_tonumber(L, idx);
-					return true;
-				case Consts.LUA_TSTRING:
-					o = API.lua_tostring(L, idx);
-					return true;
-				case Consts.LUA_TLIGHTUSERDATA:
-					o = API.lua_touserdata(L, idx);
-					return true;
-			}
-			IntPtr ptr = API.lua_touserdata(L, idx);
-			if (ptr == IntPtr.Zero)
-				return false;
-			ObjectReference gch = (ObjectReference)Marshal.ReadIntPtr(ptr);
-			if (!type.IsInstanceOfType(gch.Target))
-				return false;
-			o = gch.Target;
-			return true;
-		}
-
-		public T ToType<T>(int idx)
-		{
-			T result = default(T);
-			if (!ToType(idx, ref result))
-				throw new InvalidCastException(string.Format("bad argument #{0}", idx));
-			return result;
-		}
-	}
-
-	public static class Helper
-	{
-		private static class ValueTypeBuffer<T>
-		{
-			const int MAX_SIZE = 16 * 1024;
-			static int COUNT = (MAX_SIZE - 1) / Marshal.SizeOf(typeof(T)) + 1;
-			static List<T[]> buffers = new List<T[]>();
-			static List<int> frees = new List<int>(2 * COUNT);
-
-			public static int New()
-			{
-				if (frees.Count == 0)
-				{
-					T[] array = new T[COUNT];
-					int start = (buffers.Count) * COUNT;
-					buffers.Add(array);
-					for (int i = 0; i < COUNT; ++i)
-					{
-						frees.Add(i + start);
-					}
-				}
-				int index = frees.Count - 1;
-				int result = frees[index];
-				frees.RemoveAt(index);
-				buffers[result / COUNT][result % COUNT] = default(T);
-				return result;
-			}
-			public static void Delete(int i)
-			{
-				frees.Add(i);
-			}
-			public static T Get(int i)
-			{
-				return buffers[i / COUNT][i % COUNT];
-			}
-			public static void Set(int i, ref T t)
-			{
-				buffers[i / COUNT][i % COUNT] = t;
-			}
-		}
-		public class ValueTypeInstance<T>
-		{
-			private int bufferIndex;
-			public ValueTypeInstance()
-			{
-				bufferIndex = ValueTypeBuffer<T>.New();
-			}
-			~ValueTypeInstance()
-			{
-				Loop.Run(delegate()
-				{
-					ValueTypeBuffer<T>.Delete(bufferIndex);
-				});
-			}
-			public void Set(T t)
-			{
-				ValueTypeBuffer<T>.Set(bufferIndex, ref t);
-			}
-			public void Set(ref T t)
-			{
-				ValueTypeBuffer<T>.Set(bufferIndex, ref t);
-			}
-			public T Get()
-			{
-				return ValueTypeBuffer<T>.Get(bufferIndex);
-			}
-			public static implicit operator T(ValueTypeInstance<T> inst)
-			{
-				return ValueTypeBuffer<T>.Get(inst.bufferIndex);
-			}
-		}
-	}
-
-	public static partial class API
-	{
-		public static void lua_pushtype(IntPtr L, Enum e)
-		{
-		}
-
-		public static void lua_pushtype(IntPtr L, bool b)
-		{
-			lua_pushboolean(L, b ? 1 : 0);
-		}
-		public static void lua_pushtype(IntPtr L, sbyte s)
-		{
-			lua_pushinteger(L, s);
-		}
-		public static void lua_pushtype(IntPtr L, byte b)
-		{
-			lua_pushinteger(L, b);
-		}
-		public static void lua_pushtype(IntPtr L, short s)
-		{
-			lua_pushinteger(L, s);
-		}
-		public static void lua_pushtype(IntPtr L, ushort u)
-		{
-			lua_pushinteger(L, u);
-		}
-		public static void lua_pushtype(IntPtr L, int i)
-		{
-			lua_pushinteger(L, i);
-		}
-		public static void lua_pushtype(IntPtr L, uint u)
-		{
-			lua_pushnumber(L, u);
-		}
-		public static void lua_pushtype(IntPtr L, float f)
-		{
-			lua_pushnumber(L, f);
-		}
-		public static void lua_pushtype(IntPtr L, double d)
-		{
-			lua_pushnumber(L, d);
-		}
-		public static void lua_pushtype(IntPtr L, decimal d)
-		{
-			lua_pushnumber(L, (double)d);
-		}
-		[ThreadStatic] static char[] chars;
-		public static void lua_pushtype(IntPtr L, char c)
-		{
-			if (chars == null)
-				chars = new char[1];
-			chars[0] = c;
-			byte[] bytes = Encoding.UTF8.GetBytes(chars);
-			lua_pushlstring(L, bytes);
-		}
-		public static void lua_pushtype(IntPtr L, string s)
-		{
-			if (s == null)
-				lua_pushnil(L);
-			else
-				lua_pushstring(L, s);
-		}
-		public static void lua_pushtype(IntPtr L, byte[] s)
-		{
-			if (s == null)
-				lua_pushnil(L);
-			else
-				lua_pushlstring(L, s);
-		}
-		[ThreadStatic] static byte[] longbytes;
-		public static void lua_pushtype(IntPtr L, ulong l)
-		{
-			if (longbytes == null)
-				longbytes = new byte[9];
-			longbytes[0] = (byte)'L';
-			for (int i = 1; i < 9; ++i)
-			{
-				longbytes[9 - i] = (byte)(l & 0xff);
-				l >>= 8;
-			}
-			lua_pushlstring(L, longbytes);
-		}
-		public static void lua_pushtype(IntPtr L, long l)
-		{
-			lua_pushtype(L, (ulong)l);
-		}
-		public static void lua_pushtype(IntPtr L, object o)
-		{
-			if (o == null)
-			{
-				lua_pushnil(L);
-			}
-			else
-			{
-				switch (Type.GetTypeCode(o.GetType()))
-				{
-				case TypeCode.Empty:
-				case TypeCode.DBNull:
-					lua_pushnil(L);
-					break;
-				case TypeCode.Boolean:
-					lua_pushtype(L, (bool)o);
-					break;
-				case TypeCode.Char:
-					lua_pushtype(L, (char)o);
-					break;
-				case TypeCode.SByte:
-					lua_pushtype(L, (sbyte)o);
-					break;
-				case TypeCode.Byte:
-					lua_pushtype(L, (byte)o);
-					break;
-				case TypeCode.Int16:
-					lua_pushtype(L, (short)o);
-					break;
-				case TypeCode.UInt16:
-					lua_pushtype(L, (ushort)o);
-					break;
-				case TypeCode.Int32:
-					lua_pushtype(L, (int)o);
-					break;
-				case TypeCode.UInt32:
-					lua_pushtype(L, (uint)o);
-					break;
-				case TypeCode.Int64:
-					lua_pushtype(L, (long)o);
-					break;
-				case TypeCode.UInt64:
-					lua_pushtype(L, (ulong)o);
-					break;
-				case TypeCode.Single:
-					lua_pushtype(L, (float)o);
-					break;
-				case TypeCode.Double:
-					lua_pushtype(L, (double)o);
-					break;
-				case TypeCode.Decimal:
-					lua_pushtype(L, (decimal)o);
-					break;
-				case TypeCode.String:
-					lua_pushtype(L, (string)o);
-					break;
-				default:
-					lua_pushtype(L, o, typeof(object));
-					break;
-				}
-			}
-		}
-		public static void lua_pushtype<T>(IntPtr L, T t)
-		{
-			lua_pushtype(L, ref t);
-		}
-		public static void lua_pushtype<T>(IntPtr L, ref T t)
-		{
-			Type type = typeof(T);
 			if (type.IsValueType)
 			{
-				Helper.ValueTypeInstance<T> inst = new Helper.ValueTypeInstance<T>();
-				inst.Set(ref t);
-				lua_pushtype(L, inst, type);
-			}
-			else
-			{
-				if (t == null)
-					lua_pushnil(L);
-				else
-					lua_pushtype(L, t, type);
-			}
-		}
-		public static void lua_pushtype(IntPtr L, object o, Type type)
-		{
-
-		}
-
-		public static bool lua_totype(IntPtr L, int idx, ref bool b)
-		{
-			b = lua_toboolean(L, idx);
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref sbyte s)
-		{
-			if (!lua_isnumber(L, idx))
-				return false;
-			double d = lua_tonumber(L, idx);
-			double nd = Math.Floor(d + 0.5);
-			if (Math.Abs(d - nd) >= double.Epsilon)
-				return false;
-			if (nd > sbyte.MaxValue || nd < sbyte.MinValue)
-				return false;
-			s = (sbyte)nd;
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref byte b)
-		{
-			if (!lua_isnumber(L, idx))
-				return false;
-			double d = lua_tonumber(L, idx);
-			double nd = Math.Floor(d + 0.5);
-			if (Math.Abs(d - nd) >= double.Epsilon)
-				return false;
-			if (nd > byte.MaxValue || nd < byte.MinValue)
-				return false;
-			b = (byte)nd;
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref short s)
-		{
-			if (!lua_isnumber(L, idx))
-				return false;
-			double d = lua_tonumber(L, idx);
-			double nd = Math.Floor(d + 0.5);
-			if (Math.Abs(d - nd) >= double.Epsilon)
-				return false;
-			if (nd > short.MaxValue || nd < short.MinValue)
-				return false;
-			s = (short)nd;
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref ushort u)
-		{
-			if (!lua_isnumber(L, idx))
-				return false;
-			double d = lua_tonumber(L, idx);
-			double nd = Math.Floor(d + 0.5);
-			if (Math.Abs(d - nd) >= double.Epsilon)
-				return false;
-			if (nd > ushort.MaxValue || nd < ushort.MinValue)
-				return false;
-			u = (ushort)nd;
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref int i)
-		{
-			if (!lua_isnumber(L, idx))
-				return false;
-			double d = lua_tonumber(L, idx);
-			double nd = Math.Floor(d + 0.5);
-			if (Math.Abs(d - nd) >= double.Epsilon)
-				return false;
-			if (nd > int.MaxValue || nd < int.MinValue)
-				return false;
-			i = (int)nd;
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref uint u)
-		{
-			if (!lua_isnumber(L, idx))
-				return false;
-			double d = lua_tonumber(L, idx);
-			double nd = Math.Floor(d + 0.5);
-			if (Math.Abs(d - nd) >= double.Epsilon)
-				return false;
-			if (nd > uint.MaxValue || nd < uint.MinValue)
-				return false;
-			u = (uint)nd;
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref float f)
-		{
-			if (!lua_isnumber(L, idx))
-				return false;
-			double d = lua_tonumber(L, idx);
-			if (d > float.MaxValue || d < float.MinValue)
-				return false;
-			f = (float)d;
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref double d)
-		{
-			if (!lua_isnumber(L, idx))
-				return false;
-			d = lua_tonumber(L, idx);
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref decimal d)
-		{
-			if (!lua_isnumber(L, idx))
-				return false;
-			double nd = lua_tonumber(L, idx);
-			if (nd > decimal.ToDouble(decimal.MaxValue) || nd < decimal.ToDouble(decimal.MinValue))
-				return false;
-			d = (decimal)nd;
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref char c)
-		{
-			string s = null;
-			if (!lua_totype(L, idx, ref s))
-				return false;
-			if (s.Length != 1)
-				return false;
-			c = s[0];
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref string s)
-		{
-			if (!lua_isstring(L, idx))
-				return false;
-			s = lua_tostring(L, idx);
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref byte[] s)
-		{
-			if (!lua_isstring(L, idx))
-				return false;
-			int len;
-			IntPtr ptr = lua_tolstring(L, idx, out len);
-			s = new byte[len];
-			Marshal.Copy(ptr, s, 0, len);
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref ulong u)
-		{
-			if (longbytes == null)
-				longbytes = new byte[9];
-			if (!lua_isstring(L, idx))
-				return false;
-			int len;
-			IntPtr ptr = lua_tolstring(L, idx, out len);
-			if (len != 9)
-				return false;
-			Marshal.Copy(ptr, longbytes, 0, 9);
-			if (longbytes[0] != (byte)'L')
-				return false;
-			u = 0;
-			for (int i = 1; i < 9; ++i)
-			{
-				u = (u << 8) + longbytes[i];
-			}
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref long l)
-		{
-			ulong u = 0;
-			if (!lua_totype(L, idx, ref u))
-				return false;
-			l = (long)u;
-			return true;
-		}
-		public static bool lua_totype(IntPtr L, int idx, ref object o)
-		{
-			switch (lua_type(L, idx))
-			{
-			case Consts.LUA_TNIL:
-				o = null;
-				return true;
-			case Consts.LUA_TBOOLEAN:
-				o = API.lua_toboolean(L, idx);
-				return true;
-			case Consts.LUA_TNUMBER:
-				o = API.lua_tonumber(L, idx);
-				return true;
-			case Consts.LUA_TSTRING:
-				o = API.lua_tostring(L, idx);
-				return true;
-			case Consts.LUA_TUSERDATA:
-				o = ((ObjectReference)lua_touserdata(L, idx)).Target;
-				return true;
-			}
-			return false;
-		}
-		public static bool lua_totype<T>(IntPtr L, int idx, ref T t)
-		{
-			Type type = typeof(T);
-			if (type.IsValueType)
-			{
-				if (!lua_isuserdata(L, idx))
+				IntPtr ptr = API.lua_touserdata(L, idx);
+				if (ptr == IntPtr.Zero)
 					return false;
-				ObjectReference handle = (ObjectReference)lua_touserdata(L, idx);
-				Helper.ValueTypeInstance<T> inst = handle.Target as Helper.ValueTypeInstance<T>;
-				if (inst == null)
-					return false;
-				t = inst.Get();
-				return true;
-			}
-			else
-			{
-				if (lua_isnil(L, idx))
+				ObjectReference gch = (ObjectReference)Marshal.ReadIntPtr(ptr);
+				if (type.IsEnum)
 				{
-					t = default(T);
-					return true;
-				}
-				if (!lua_isuserdata(L, idx))
-					return false;
-				ObjectReference handle = (ObjectReference)lua_touserdata(L, idx);
-				if (!(handle.Target is T))
-					return false;
-				t = (T)handle.Target;
-				return true;
-			}
-		}
-		public static bool lua_totype<T>(IntPtr L, int idx, ref T[] t)
-		{
-			T[] array;
-			if (lua_istable(L, idx))
-			{
-				int len = lua_objlen(L, idx).ToInt32();
-				array = new T[len];
-				T tt = default(T);
-				for (int i = 0; i < len; ++i)
-				{
-					lua_rawgeti(L, idx, i + 1);
-					if (!lua_totype(L, -1, ref tt))
+					EnumObject e = gch.Target as EnumObject;
+					if (e == null)
 						return false;
-					lua_pop(L, 1);
-					array[i] = tt;
+					o = e.GetTarget();
+					return o.GetType() == type;
 				}
-				t = array;
+				ValueObject v = gch.Target as ValueObject;
+				if (v == null)
+					return false;
+				o = v.GetTarget();
+				return o.GetType() == type;
+			}
+			else
+			{
+				if (API.lua_isnil(L, idx))
+				{
+					o = null;
+					return true;
+				}
+				ObjectReference gch;
+				if (API.lua_islightuserdata(L, idx))
+				{
+					gch = (ObjectReference)API.lua_touserdata(L, idx);
+				}
+				else if (API.lua_isuserdata(L, idx))
+				{
+					IntPtr ptr = API.lua_touserdata(L, idx);
+					gch = (ObjectReference)Marshal.ReadIntPtr(ptr);
+				}
+				else
+				{
+					return false;
+				}
+				if (gch.Target == null)
+				{
+					o = null;
+					return true;
+				}
+				if (!type.IsInstanceOfType(gch.Target))
+					return false;
+				o = gch.Target;
 				return true;
 			}
-			if (!lua_isuserdata(L, idx))
-				return false;
-			ObjectReference handle = (ObjectReference)lua_touserdata(L, idx);
-			array = handle.Target as T[];
-			if (array == null)
-				return false;
-			t = array;
-			return true;
-		}
-		public static T luaL_checktype<T>(IntPtr L, int idx)
-		{
-			T result = default(T);
-			if (!lua_totype(L, idx, ref result))
-				luaL_typerror(L, idx, "");
-			return result;
 		}
 	}
 
 	public static partial class Tools
 	{
 		private static readonly Dictionary<Type, Func<Function, Delegate>> createdelegates = new Dictionary<Type, Func<Function, Delegate>>();
-		private static readonly Dictionary<Type, Func<State, Enum, bool>> dictenums = new Dictionary<Type, Func<State, Enum, bool>>();
 
 		private class Function
 		{
@@ -1435,36 +845,6 @@ namespace Lua
 			if (!createdelegates.TryGetValue(type, out f))
 				throw new NotImplementedException(RunTimeType.Name[type]);
 			return f(new Function(L, index));
-		}
-
-		public static bool PushEnum(State s, Enum e)
-		{
-			Type t = e.GetType();
-			Func<State, Enum, bool> f;
-			if (dictenums.TryGetValue(t, out f))
-			{
-				if (!f(s, e))
-					return false;
-				if (API.luaEX_getmetatable(s, Tools.Type2IntPtr(t)))
-					API.lua_setmetatable(s, -2);
-				return true;
-			}
-			switch (Type.GetTypeCode(Enum.GetUnderlyingType(t)))
-			{
-				case TypeCode.SByte:
-				case TypeCode.Int16:
-				case TypeCode.Int32:
-					return s.PushType((int)(object)e);
-				case TypeCode.Byte:
-				case TypeCode.UInt16:
-				case TypeCode.UInt32:
-					return s.PushType((uint)(object)e);
-				case TypeCode.UInt64:
-					return s.PushType((ulong)(object)e);
-				case TypeCode.Int64:
-					return s.PushType((long)(object)e);
-			}
-			return false;
 		}
 	}
 }

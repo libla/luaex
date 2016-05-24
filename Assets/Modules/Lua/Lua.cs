@@ -172,7 +172,7 @@ namespace Lua
 		}
 	}
 
-	public class EnumObject
+	public abstract class EnumObject
 	{
 		protected static readonly Dictionary<Type, Func<Enum, EnumObject>> creates = new Dictionary<Type, Func<Enum, EnumObject>>();
 
@@ -183,6 +183,8 @@ namespace Lua
 				return fn(e);
 			throw new NotImplementedException(RunTimeType.Name[type]);
 		}
+
+		public abstract object GetTarget();
 	}
 
 	public class EnumObject<T> : EnumObject
@@ -208,12 +210,18 @@ namespace Lua
 			dict.Add(t, result);
 			return result;
 		}
+
+		public override object GetTarget()
+		{
+			return Target;
+		}
 	}
 
 	public abstract class ValueObject
 	{
 		protected static readonly Dictionary<Type, Func<object, ValueObject>> creates = new Dictionary<Type, Func<object, ValueObject>>();
 		public abstract void Release();
+		public abstract object GetTarget();
 
 		public static ValueObject Add(Type type, object o)
 		{
@@ -260,6 +268,11 @@ namespace Lua
 		public override void Release()
 		{
 			list.Push(this);
+		}
+
+		public override object GetTarget()
+		{
+			return Target;
 		}
 	}
 
