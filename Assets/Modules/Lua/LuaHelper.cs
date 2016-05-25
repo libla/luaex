@@ -826,6 +826,15 @@ namespace Lua
 					API.lua_unref(refstate, refidx);
 				});
 			}
+
+			public bool Push(IntPtr L)
+			{
+				State s = L;
+				if (refstate != s)
+					return false;
+				API.lua_getref(L, refidx);
+				return true;
+			}
 		}
 
 		public static Delegate CreateDelegate(Type type, IntPtr L, int index)

@@ -56,12 +56,16 @@ namespace Lua
 		public static extern void luaEX_opt(IntPtr L, byte[] str, uint len, lua_CFunction fn);
 
 		/* adapt functions */
-		public static void luaEX_newtype(IntPtr L, string str, Type type)
+		public static void luaEX_newtype(IntPtr L, Type type, string str)
 		{
 			byte[] bytes = Encoding.UTF8.GetBytes(str);
 			byte[] strbytes = new byte[bytes.Length + 1];
 			Array.Copy(bytes, strbytes, bytes.Length);
 			luaEX_newtype(L, strbytes, Tools.Type2IntPtr(type));
+		}
+		public static void luaEX_newtype(IntPtr L, Type type, byte[] bytes)
+		{
+			luaEX_newtype(L, bytes, Tools.Type2IntPtr(type));
 		}
 		public static void luaEX_newtype(IntPtr L, Type type)
 		{
