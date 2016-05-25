@@ -36,68 +36,63 @@ namespace CodeDom
 				};
 			}
 			string name;
-			List<string> arrays = new List<string>();
-			Type pritype = type;
-			while (pritype.IsArray)
+			if (predefinetype.TryGetValue(type, out name))
 			{
-				pritype = pritype.GetElementType();
-				arrays.Add("[]");
-			}
-			if (predefinetype.TryGetValue(pritype, out name))
-			{
-				return name + string.Concat(arrays.ToArray());
+				return name;
 			}
 			return null;
 		}
 
-		public static string Name(Type type)
-		{
-			string name = predefinetypename(type);
-			if (name != null)
-				return name;
-			LinkedList<string> namelist = new LinkedList<string>();
-			for (Type parent = type; parent != null; parent = parent.DeclaringType)
-			{
-				namelist.AddFirst(parent.Name);
-			}
-			namelist.AddFirst(type.Namespace);
-			string[] names = new string[namelist.Count];
-			namelist.CopyTo(names, 0);
-			namelist.Clear();
-			return string.Join(".", names);
-		}
-
 		public static string Name(Type type, IDictionary<string, bool> namespaces)
 		{
+			List<string> arrays = new List<string>();
+			while (type.IsArray)
+			{
+				type = type.GetElementType();
+				arrays.Add("[]");
+			}
 			string name = predefinetypename(type);
 			if (name != null)
-				return name;
-			LinkedList<string> namelist = new LinkedList<string>();
-			for (Type parent = type; parent != null; parent = parent.DeclaringType)
+				return name + string.Concat(arrays.ToArray());
+			if (type.IsGenericType)
 			{
-				namelist.AddFirst(parent.Name);
-			}
-			string nsname = type.Namespace;
-			string[] spaces = nsname != null ? nsname.Split('.') : new string[0];
-			string[] nearest = new string[spaces.Length];
-			for (int i = 0; i < spaces.Length; ++i)
-			{
-				nearest[i] = string.Join(".", spaces, 0, spaces.Length - i);
-			}
-			for (int i = 0; i < nearest.Length; ++i)
-			{
-				if (namespaces.ContainsKey(nearest[i]))
+				if (type.IsGenericTypeDefinition)
 				{
-					nsname = string.Join(".", spaces, spaces.Length - i, i);
-					break;
+					name = type.Name;
+					name = name.Substring(0, name.IndexOf("`", StringComparison.Ordinal));
+				}
+				else
+				{
+					name = type.GetGenericTypeDefinition().Name;
+					name = name.Substring(0, name.IndexOf("`", StringComparison.Ordinal));
+					List<string> args = new List<string>();
+					foreach (Type t in type.GetGenericArguments())
+					{
+						args.Add(Name(t, namespaces));
+					}
+					name = name + "<" + string.Join(", ", args.ToArray()) + ">";
 				}
 			}
-			if (nsname != "")
-				namelist.AddFirst(nsname);
-			string[] names = new string[namelist.Count];
-			namelist.CopyTo(names, 0);
-			namelist.Clear();
-			return string.Join(".", names);
+			else
+			{
+				name = type.Name;
+			}
+			name = name + string.Concat(arrays.ToArray());
+			if (type.DeclaringType == null)
+			{
+				string nsname = type.Namespace;
+				if (!string.IsNullOrEmpty(nsname) && namespaces != null && namespaces.ContainsKey(nsname))
+					nsname = "";
+				if (string.IsNullOrEmpty(nsname))
+					return name;
+				return nsname + "." + name;
+			}
+			return Name(type.DeclaringType, namespaces) + "." + name;
+		}
+
+		public static string Name(Type type)
+		{
+			return Name(type, null);
 		}
 
 		public static string Name(CodeTypeDefine type)
@@ -134,7 +129,7 @@ namespace CodeDom
 			{
 				prefix = Name(type.parentns, namespaces);
 			}
-			return prefix == "" ? type.name : prefix + "." + type.name;
+			return string.IsNullOrEmpty(prefix) ? type.name : prefix + "." + type.name;
 		}
 
 		public static string Name(CodePackage ns)
@@ -167,20 +162,8 @@ namespace CodeDom
 			namelist.CopyTo(names, 0);
 			namelist.Clear();
 			string result = string.Join(".", names);
-			string[] spaces = result.Split('.');
-			string[] nearest = new string[spaces.Length];
-			for (int i = 0; i < spaces.Length; ++i)
-			{
-				nearest[i] = string.Join(".", spaces, 0, spaces.Length - i);
-			}
-			for (int i = 0; i < nearest.Length; ++i)
-			{
-				if (namespaces.ContainsKey(nearest[i]))
-				{
-					result = string.Join(".", spaces, spaces.Length - i, i);
-					break;
-				}
-			}
+			if (namespaces.ContainsKey(result))
+				result = "";
 			return result;
 		}
 
@@ -259,9 +242,9 @@ namespace CodeDom
 		}
 
 		public CodeComment comments;
-		protected List<CodePackage> _namespaces;
-		protected List<string> _imports;
-		protected List<CodeTypeDefine> _types;
+		protected readonly List<CodePackage> _namespaces;
+		protected readonly List<string> _imports;
+		protected readonly List<CodeTypeDefine> _types;
 
 		public void Compile(TextWriter writer)
 		{
@@ -323,9 +306,9 @@ namespace CodeDom
 		public string name;
 		public CodeComment comments;
 		public CodePackage parent;
-		protected List<CodePackage> _namespaces;
-		protected List<string> _imports;
-		protected List<CodeTypeDefine> _types;
+		protected readonly List<CodePackage> _namespaces;
+		protected readonly List<string> _imports;
+		protected readonly List<CodeTypeDefine> _types;
 
 		public void Compile(TextWriter writer, string indent, CodeTypeDefine ctype, IDictionary<string, bool> namespaces)
 		{
@@ -367,7 +350,7 @@ namespace CodeDom
 
 	public abstract class CodeTypeDefine
 	{
-		public CodeTypeDefine(string s)
+		protected CodeTypeDefine(string s)
 		{
 			name = s;
 			modify = "public";
@@ -384,7 +367,7 @@ namespace CodeDom
 		public CodeStructDefine parenttype;
 		public CodeComment comments;
 		public string modify;
-		protected List<string> _attributes;
+		protected readonly List<string> _attributes;
 
 		public void Compile(TextWriter writer, string indent, CodeTypeDefine ctype, IDictionary<string, bool> namespaces)
 		{
@@ -396,7 +379,7 @@ namespace CodeDom
 				writer.WriteLine("[{0}]", attribute);
 			}
 			writer.Write(indent);
-			if (modify != null && modify != "")
+			if (!string.IsNullOrEmpty(modify))
 			{
 				writer.Write(modify);
 				writer.Write(" ");
@@ -428,8 +411,8 @@ namespace CodeDom
 			_members.Add(member);
 		}
 
-		protected List<CodeTypeDefine> _types;
-		protected List<CodeTypeMember> _members;
+		protected readonly List<CodeTypeDefine> _types;
+		protected readonly List<CodeTypeMember> _members;
 
 		public virtual void CompileSelf(TextWriter writer, string indent, CodeTypeDefine ctype,
 										IDictionary<string, bool> namespaces)
@@ -489,7 +472,7 @@ namespace CodeDom
 			invoke = new CodeMethod();
 		}
 
-		protected CodeMethod invoke;
+		protected readonly CodeMethod invoke;
 
 		public override void CompileType(TextWriter writer, string indent, CodeTypeDefine ctype,
 										IDictionary<string, bool> namespaces)
@@ -536,14 +519,14 @@ namespace CodeDom
 		}
 
 		protected string type;
-		protected List<string> items;
-		protected List<object> values;
+		protected readonly List<string> items;
+		protected readonly List<object> values;
 
 		public override void CompileType(TextWriter writer, string indent, CodeTypeDefine ctype,
 										IDictionary<string, bool> namespaces)
 		{
 			writer.Write("enum {0}", name);
-			if (type != null && type != "")
+			if (!string.IsNullOrEmpty(type))
 			{
 				writer.Write(" : {0}", type);
 			}
@@ -590,8 +573,8 @@ namespace CodeDom
 			set { _init = value; }
 		}
 
-		protected CodeTypeExp _type;
-		protected string _name;
+		protected readonly CodeTypeExp _type;
+		protected readonly string _name;
 		protected CodeExp _init;
 
 		public void Compile(TextWriter writer, string indent, CodeTypeDefine ctype, IDictionary<string, bool> namespaces)
@@ -655,9 +638,9 @@ namespace CodeDom
 			get { return _name; }
 		}
 
-		protected CodeTypeExp _type;
-		protected string _name;
-		protected ParamMode _mode;
+		protected readonly CodeTypeExp _type;
+		protected readonly string _name;
+		protected readonly ParamMode _mode;
 
 		public void Compile(TextWriter writer, string indent, CodeTypeDefine ctype, IDictionary<string, bool> namespaces)
 		{
@@ -683,7 +666,7 @@ namespace CodeDom
 			comments.Add(comment);
 		}
 
-		protected List<string> comments;
+		protected readonly List<string> comments;
 
 		public void Compile(TextWriter writer, string indent)
 		{
@@ -732,8 +715,8 @@ namespace CodeDom
 		}
 
 		protected CodeTypeExp returntype;
-		protected List<CodeParam> paramlist;
-		protected CodeBlockStat blockstat;
+		protected readonly List<CodeParam> paramlist;
+		protected readonly CodeBlockStat blockstat;
 
 		public void CompileDecl(TextWriter writer, string name, string indent, CodeTypeDefine ctype,
 								IDictionary<string, bool> namespaces)
@@ -783,7 +766,7 @@ namespace CodeDom
 
 	public abstract class CodeTypeMember
 	{
-		public CodeTypeMember()
+		protected CodeTypeMember()
 		{
 			_attributes = new List<string>();
 		}
@@ -795,7 +778,7 @@ namespace CodeDom
 
 		public CodeComment comments;
 		public string modify;
-		protected List<string> _attributes;
+		protected readonly List<string> _attributes;
 
 		public void Compile(TextWriter writer, string indent, CodeTypeDefine ctype, IDictionary<string, bool> namespaces)
 		{
@@ -807,7 +790,7 @@ namespace CodeDom
 				writer.WriteLine("[{0}]", attribute);
 			}
 			writer.Write(indent);
-			if (modify != null && modify != "")
+			if (!string.IsNullOrEmpty(modify))
 			{
 				writer.Write(modify);
 				writer.Write(" ");
@@ -839,7 +822,7 @@ namespace CodeDom
 			get { return var.name; }
 		}
 
-		protected CodeVariable var;
+		protected readonly CodeVariable var;
 
 		public override void CompileMember(TextWriter writer, string indent, CodeTypeDefine ctype,
 											IDictionary<string, bool> namespaces)
@@ -864,8 +847,8 @@ namespace CodeDom
 
 		public CodeBlockStat getter;
 		public CodeBlockStat setter;
-		protected CodeTypeExp _type;
-		protected string _name;
+		protected readonly CodeTypeExp _type;
+		protected readonly string _name;
 
 		public override void CompileMember(TextWriter writer, string indent, CodeTypeDefine ctype,
 											IDictionary<string, bool> namespaces)
@@ -940,8 +923,8 @@ namespace CodeDom
 			get { return _method; }
 		}
 
-		protected string _name;
-		protected CodeMethod _method;
+		protected readonly string _name;
+		protected readonly CodeMethod _method;
 
 		public override void CompileMember(TextWriter writer, string indent, CodeTypeDefine ctype,
 											IDictionary<string, bool> namespaces)
@@ -963,7 +946,7 @@ namespace CodeDom
 			get { return _method; }
 		}
 
-		protected CodeMethod _method;
+		protected readonly CodeMethod _method;
 
 		public override void CompileMember(TextWriter writer, string indent, CodeTypeDefine ctype,
 											IDictionary<string, bool> namespaces)
@@ -1029,6 +1012,13 @@ namespace CodeDom
 			definetype = null;
 		}
 
+		public CodeTypeExp(CodeTypeExp rhs)
+		{
+			strtype = rhs.strtype;
+			typetype = rhs.typetype;
+			definetype = rhs.definetype;
+		}
+
 		public static implicit operator CodeTypeExp(CodeTypeDefine type)
 		{
 			return new CodeTypeExp(type);
@@ -1044,7 +1034,7 @@ namespace CodeDom
 			return new CodeTypeExp(type);
 		}
 
-		public string name
+		public virtual string name
 		{
 			get
 			{
@@ -1052,20 +1042,19 @@ namespace CodeDom
 				{
 					return strtype;
 				}
-				else if (typetype != null)
+				if (typetype != null)
 				{
+					if (typetype.IsGenericType && typetype.IsGenericTypeDefinition)
+						throw new NotSupportedException(typetype.FullName);
 					return Utils.Name(typetype);
 				}
-				else
-				{
-					return Utils.Name(definetype);
-				}
+				return Utils.Name(definetype);
 			}
 		}
 
-		protected string strtype;
-		protected Type typetype;
-		protected CodeTypeDefine definetype;
+		protected readonly string strtype;
+		protected readonly Type typetype;
+		protected readonly CodeTypeDefine definetype;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1077,6 +1066,8 @@ namespace CodeDom
 			}
 			else if (typetype != null)
 			{
+				if (typetype.IsGenericType && typetype.IsGenericTypeDefinition)
+					throw new NotSupportedException(typetype.FullName);
 				name = Utils.Name(typetype, namespaces);
 			}
 			else
@@ -1086,6 +1077,67 @@ namespace CodeDom
 					name = definetype.name;
 			}
 			writer.Write(name);
+		}
+	}
+
+	public class CodeTypeArrayExp : CodeTypeExp
+	{
+		public CodeTypeArrayExp(CodeTypeExp exp)
+			: base(exp) { }
+
+		public override string name
+		{
+			get
+			{
+				return base.name + "[]";
+			}
+		}
+
+		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
+									IDictionary<string, bool> namespaces)
+		{
+			base.Compile(writer, indent, ctype, namespaces);
+			writer.Write("[]");
+		}
+	}
+
+	public class CodeTypeGenericExp : CodeTypeExp
+	{
+		protected readonly CodeTypeExp arg;
+		protected readonly CodeTypeExp[] args;
+
+		public CodeTypeGenericExp(Type type, CodeTypeExp arg, params CodeTypeExp[] args)
+			: base(type)
+		{
+			this.arg = arg;
+			this.args = args;
+		}
+
+		public override string name
+		{
+			get
+			{
+				List<string> nameargs = new List<string>(args.Length + 1) { arg.name };
+				foreach (CodeTypeExp t in args)
+				{
+					nameargs.Add(t.name);
+				}
+				return Utils.Name(typetype) + "<" + string.Join(", ", nameargs.ToArray()) + ">";
+			}
+		}
+
+		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
+									IDictionary<string, bool> namespaces)
+		{
+			writer.Write(Utils.Name(typetype, namespaces));
+			writer.Write("<");
+			arg.Compile(writer, indent, ctype, namespaces);
+			foreach (CodeTypeExp t in args)
+			{
+				writer.Write(", ");
+				t.Compile(writer, indent, ctype, namespaces);
+			}
+			writer.Write(">");
 		}
 	}
 
@@ -1108,8 +1160,8 @@ namespace CodeDom
 			writer.Write(")");
 		}
 
-		protected CodeTypeExp _type;
-		protected CodeExp _exp;
+		protected readonly CodeTypeExp _type;
+		protected readonly CodeExp _exp;
 	}
 
 	public class CodeLiteralExp : CodeExp
@@ -1119,7 +1171,7 @@ namespace CodeDom
 			literal = o;
 		}
 
-		protected object literal;
+		protected readonly object literal;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1153,7 +1205,7 @@ namespace CodeDom
 			_type = type;
 		}
 
-		protected CodeTypeExp _type;
+		protected readonly CodeTypeExp _type;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1171,7 +1223,7 @@ namespace CodeDom
 			_type = type;
 		}
 
-		protected CodeTypeExp _type;
+		protected readonly CodeTypeExp _type;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1208,8 +1260,8 @@ namespace CodeDom
 			_index = index;
 		}
 
-		protected CodeExp _exp;
-		protected CodeExp _index;
+		protected readonly CodeExp _exp;
+		protected readonly CodeExp _index;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1229,7 +1281,7 @@ namespace CodeDom
 			_var = var;
 		}
 
-		protected CodeVariable _var;
+		protected readonly CodeVariable _var;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -1253,7 +1305,7 @@ namespace CodeDom
 			_var = var;
 		}
 
-		protected CodeVariable _var;
+		protected readonly CodeVariable _var;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -1277,8 +1329,8 @@ namespace CodeDom
 			mode = m;
 		}
 
-		protected string name;
-		protected CodeParam.ParamMode mode;
+		protected readonly string name;
+		protected readonly CodeParam.ParamMode mode;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1300,8 +1352,8 @@ namespace CodeDom
 			_field = field;
 		}
 
-		protected CodeExp _exp;
-		protected string _field;
+		protected readonly CodeExp _exp;
+		protected readonly string _field;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1318,7 +1370,7 @@ namespace CodeDom
 			_field = field;
 		}
 
-		protected string _field;
+		protected readonly string _field;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1335,8 +1387,8 @@ namespace CodeDom
 			_rexp = rexp;
 		}
 
-		protected CodeExp _lexp;
-		protected CodeExp _rexp;
+		protected readonly CodeExp _lexp;
+		protected readonly CodeExp _rexp;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1349,7 +1401,7 @@ namespace CodeDom
 
 	public abstract class CodeMethodInvokeExp : CodeExp
 	{
-		public CodeMethodInvokeExp()
+		protected CodeMethodInvokeExp()
 		{
 			_param = new List<CodeExp>();
 			_parammode = new Dictionary<CodeExp, CodeParam.ParamMode>();
@@ -1371,9 +1423,9 @@ namespace CodeDom
 			get { return _templates; }
 		}
 
-		protected List<CodeExp> _param;
-		protected Dictionary<CodeExp, CodeParam.ParamMode> _parammode;
-		protected List<CodeTypeExp> _templates;
+		protected readonly List<CodeExp> _param;
+		protected readonly Dictionary<CodeExp, CodeParam.ParamMode> _parammode;
+		protected readonly List<CodeTypeExp> _templates;
 
 		public void CompileTemplate(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1424,7 +1476,7 @@ namespace CodeDom
 			_exp = exp;
 		}
 
-		protected CodeExp _exp;
+		protected readonly CodeExp _exp;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1442,7 +1494,7 @@ namespace CodeDom
 			_exp = new CodeMemberExp(exp, field);
 		}
 
-		protected CodeMemberExp _exp;
+		protected readonly CodeMemberExp _exp;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1460,7 +1512,7 @@ namespace CodeDom
 			_exp = new CodeThisMemberExp(field);
 		}
 
-		protected CodeThisMemberExp _exp;
+		protected readonly CodeThisMemberExp _exp;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1478,7 +1530,7 @@ namespace CodeDom
 			_exp = exp;
 		}
 
-		protected CodeTypeExp _exp;
+		protected readonly CodeTypeExp _exp;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1509,9 +1561,9 @@ namespace CodeDom
 			get { return _arrays; }
 		}
 
-		protected CodeTypeExp _exp;
+		protected readonly CodeTypeExp _exp;
 		protected int _length;
-		protected List<CodeExp> _arrays;
+		protected readonly List<CodeExp> _arrays;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1561,7 +1613,7 @@ namespace CodeDom
 			_text = text;
 		}
 
-		protected string _text;
+		protected readonly string _text;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1578,7 +1630,7 @@ namespace CodeDom
 			_exp = exp;
 		}
 
-		protected CodeExp _exp;
+		protected readonly CodeExp _exp;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -1601,7 +1653,7 @@ namespace CodeDom
 			_var = var;
 		}
 
-		protected CodeVariable _var;
+		protected readonly CodeVariable _var;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -1624,7 +1676,7 @@ namespace CodeDom
 			_comments = comments;
 		}
 
-		protected CodeComment _comments;
+		protected readonly CodeComment _comments;
 
 		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
 									IDictionary<string, bool> namespaces)
@@ -1640,7 +1692,7 @@ namespace CodeDom
 			_exp = exp;
 		}
 
-		protected CodeExp _exp;
+		protected readonly CodeExp _exp;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -1669,7 +1721,7 @@ namespace CodeDom
 			_exp = exp;
 		}
 
-		protected CodeExp _exp;
+		protected readonly CodeExp _exp;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -1746,11 +1798,11 @@ namespace CodeDom
 			get { return _hasvalues; }
 		}
 
-		protected List<CodeStat> _stats;
-		protected Dictionary<CodeVariable, int> _values;
-		protected Dictionary<int, List<CodeVariable>> _sortvalues;
+		protected readonly List<CodeStat> _stats;
+		protected readonly Dictionary<CodeVariable, int> _values;
+		protected readonly Dictionary<int, List<CodeVariable>> _sortvalues;
 		protected Dictionary<CodeVariable, bool> _upvalues;
-		protected Dictionary<CodeVariable, bool> _hasvalues;
+		protected readonly Dictionary<CodeVariable, bool> _hasvalues;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -1838,8 +1890,8 @@ namespace CodeDom
 			get { return _block; }
 		}
 
-		protected CodeExp _exp;
-		protected CodeBlockStat _block;
+		protected readonly CodeExp _exp;
+		protected readonly CodeBlockStat _block;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -1882,9 +1934,9 @@ namespace CodeDom
 			get { return _catchs; }
 		}
 
-		protected CodeBlockStat _try;
-		protected CodeBlockStat _finally;
-		protected List<CodeCatchStat> _catchs;
+		protected readonly CodeBlockStat _try;
+		protected readonly CodeBlockStat _finally;
+		protected readonly List<CodeCatchStat> _catchs;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -1976,8 +2028,8 @@ namespace CodeDom
 			get { return _block; }
 		}
 
-		protected CodeParam _param;
-		protected CodeBlockStat _block;
+		protected readonly CodeParam _param;
+		protected readonly CodeBlockStat _block;
 
 		public void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -2037,10 +2089,10 @@ namespace CodeDom
 			get { return _elseifs; }
 		}
 
-		protected CodeBlockStat _if;
-		protected CodeBlockStat _else;
-		protected List<CodeElseIfStat> _elseifs;
-		protected CodeExp _condition;
+		protected readonly CodeBlockStat _if;
+		protected readonly CodeBlockStat _else;
+		protected readonly List<CodeElseIfStat> _elseifs;
+		protected readonly CodeExp _condition;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -2086,8 +2138,8 @@ namespace CodeDom
 			get { return _block; }
 		}
 
-		protected CodeExp _condition;
-		protected CodeBlockStat _block;
+		protected readonly CodeExp _condition;
+		protected readonly CodeBlockStat _block;
 
 		public void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -2119,7 +2171,7 @@ namespace CodeDom
 		protected CodeVariable _var;
 		protected CodeExp _exp;
 		protected CodeExp _inc;
-		protected CodeBlockStat _block;
+		protected readonly CodeBlockStat _block;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -2158,7 +2210,7 @@ namespace CodeDom
 
 		protected CodeVariable _var;
 		protected CodeExp _iterate;
-		protected CodeBlockStat _block;
+		protected readonly CodeBlockStat _block;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -2191,8 +2243,8 @@ namespace CodeDom
 			get { return _block; }
 		}
 
-		protected CodeExp _condition;
-		protected CodeBlockStat _block;
+		protected readonly CodeExp _condition;
+		protected readonly CodeBlockStat _block;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
@@ -2224,8 +2276,8 @@ namespace CodeDom
 			get { return _block; }
 		}
 
-		protected CodeExp _condition;
-		protected CodeBlockStat _block;
+		protected readonly CodeExp _condition;
+		protected readonly CodeBlockStat _block;
 
 		public override void PreCompile(CodeTypeDefine ctype, CodeBlockStat block, int num)
 		{
