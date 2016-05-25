@@ -785,6 +785,8 @@ namespace Lua
 			for (int i = 0; i < Define.Buildtypes.Count; i++)
 			{
 				Define.BuildType buildtype = Define.Buildtypes[i];
+				if (buildtype.type.IsGenericTypeDefinition)
+					continue;
 				Types[buildtype.type] = buildtype;
 			}
 			for (int i = 0; i < Define.BaseTypes.Count; i++)
@@ -800,13 +802,51 @@ namespace Lua
 
 		private static string NameOf(Type type)
 		{
-			LinkedList<string> names = new LinkedList<string>();
-			for (Type parent = type; parent != null; parent = parent.DeclaringType)
+			if (type.IsGenericType && type.IsGenericTypeDefinition)
+				throw new ArgumentException(type.FullName);
+			if (type == typeof(int))
+				return "int";
+			if (type == typeof(uint))
+				return "uint";
+			if (type == typeof(short))
+				return "short";
+			if (type == typeof(ushort))
+				return "ushort";
+			if (type == typeof(byte))
+				return "byte";
+			if (type == typeof(sbyte))
+				return "sbyte";
+			if (type == typeof(char))
+				return "char";
+			if (type == typeof(double))
+				return "double";
+			if (type == typeof(float))
+				return "float";
+			if (type == typeof(bool))
+				return "bool";
+			if (type == typeof(string))
+				return "string";
+			if (type == typeof(ulong))
+				return "ulong";
+			if (type == typeof(long))
+				return "long";
+			if (type == typeof(decimal))
+				return "decimal";
+			if (type == typeof(object))
+				return "object";
+			if (type.IsGenericType)
 			{
-				names.AddFirst(parent.Name);
+				string name = type.GetGenericTypeDefinition().Name;
+				name = name.Substring(0, name.IndexOf("`", StringComparison.Ordinal));
+				name = type.DeclaringType != null ? NameOf(type.DeclaringType) + "." + name : (string.IsNullOrEmpty(type.Namespace) ? name : type.Namespace + "." + name);
+				List<string> args = new List<string>();
+				foreach (Type t in type.GetGenericArguments())
+				{
+					args.Add(NameOf(t));
+				}
+				return name + "<" + string.Join(", ", args.ToArray()) + ">";
 			}
-			names.AddFirst(type.Namespace);
-			return string.Join(".", names.ToArray());
+			return type.DeclaringType != null ? NameOf(type.DeclaringType) + "." + type.Name : (string.IsNullOrEmpty(type.Namespace) ? type.Name : type.Namespace + "." + type.Name);
 		}
 
 		private static bool IsObsolete(Type type)
