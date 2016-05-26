@@ -98,7 +98,7 @@ namespace Lua
 			{
 				public int CompareTo(Method rhs)
 				{
-					int result = name.CompareTo(rhs.name);
+					int result = string.Compare(name, rhs.name, StringComparison.Ordinal);
 					if (result != 0)
 						return result;
 					return func.CompareTo(rhs.func);
@@ -111,7 +111,7 @@ namespace Lua
 			{
 				public int CompareTo(Opt rhs)
 				{
-					int result = type.CompareTo(rhs.type);
+					int result = string.Compare(type, rhs.type, StringComparison.Ordinal);
 					if (result != 0)
 						return result;
 					if (param == rhs.param)
@@ -577,7 +577,7 @@ namespace Lua
 											ret = fn.ret,
 											param = fn.args.Length > 1 ? fn.args[1].type : null,
 										};
-										if (opts.FindIndex((m) => { return m.type == val.type; }) >= 0)
+										if (opts.FindIndex(m => { return m.type == val.type; }) >= 0)
 										{
 											opts.Add(val);
 										}
@@ -598,7 +598,7 @@ namespace Lua
 												ret = fn.ret,
 												param = fn.args.Length > 1 ? fn.args[1].type : null,
 											};
-											if (opts.FindIndex((m) => { return m.type == val.type; }) >= 0)
+											if (opts.FindIndex(m => { return m.type == val.type; }) >= 0)
 											{
 												opts.Add(val);
 											}
@@ -616,14 +616,14 @@ namespace Lua
 											ret = fn.ret,
 											param = fn.args.Length > 0 ? fn.args[0].type : null,
 										};
-										if (opts.FindIndex((m) => { return m.type == val.type; }) >= 0)
+										if (opts.FindIndex(m => { return m.type == val.type; }) >= 0)
 										{
 											opts.Add(val);
 										}
 										continue;
 									}
 								}
-								if (methods.FindIndex((m) => { return m.name == method.Name; }) >= 0)
+								if (methods.FindIndex(m => { return m.name == method.Name; }) >= 0)
 								{
 									ClassType.Method val = new ClassType.Method
 									{
@@ -698,7 +698,7 @@ namespace Lua
 				ClassType type = classtypes[i];
 				string name = typeset[type.type];
 				string prefix = name.Replace(".", "_");
-				CodeMethodInvokeExp newtype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(Lua.API)), "tolua_newtype");
+				CodeMethodInvokeExp newtype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "tolua_newtype");
 				newtype.param.Add(new CodeParamExp("L"));
 				if (!string.IsNullOrEmpty(name))
 				{
@@ -708,7 +708,7 @@ namespace Lua
 				registers.stats.Add(new CodeExpStat(newtype));
 				if (type.parent != null)
 				{
-					CodeMethodInvokeExp basetype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(Lua.API)), "tolua_basetype");
+					CodeMethodInvokeExp basetype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "tolua_basetype");
 					basetype.param.Add(new CodeParamExp("L"));
 					basetype.param.Add(new CodeTypeOfExp(new CodeTypeExp(type.parent)));
 					registers.stats.Add(new CodeExpStat(basetype));
@@ -740,19 +740,19 @@ namespace Lua
 
 					CodeCatchStat catchstat = new CodeCatchStat(new CodeTypeExp(typeof(Exception)), "e");
 					trystat.catchstat.Add(catchstat);
-					CodeMethodInvokeExp error = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(Lua.API)), "tolua_error");
+					CodeMethodInvokeExp error = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "tolua_error");
 					error.param.Add(new CodeParamExp("L"));
 					error.param.Add(new CodeParamExp("e"));
 					catchstat.stat.stats.Add(new CodeReturnStat(error));
 					fnstat.stats.Add(trystat);
-					CodeMethodInvokeExp construct = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(Lua.API)), "tolua_construct");
+					CodeMethodInvokeExp construct = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "tolua_construct");
 					construct.param.Add(new CodeParamExp("L"));
 					construct.param.Add(new CodeThisMemberExp(fnname));
 					registers.stats.Add(new CodeExpStat(construct));
 					classdef.Add(fn);
 				}
 
-				CodeMethodInvokeExp nexttype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(Lua.API)), "tolua_nexttype");
+				CodeMethodInvokeExp nexttype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "tolua_nexttype");
 				nexttype.param.Add(new CodeParamExp("L"));
 				registers.stats.Add(new CodeExpStat(nexttype));
 
