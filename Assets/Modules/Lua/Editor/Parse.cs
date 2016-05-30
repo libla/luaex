@@ -98,7 +98,7 @@ namespace Lua
 			{
 				public int CompareTo(Method rhs)
 				{
-					int result = name.CompareTo(rhs.name);
+					int result = string.Compare(name, rhs.name, StringComparison.Ordinal);
 					if (result != 0)
 						return result;
 					return func.CompareTo(rhs.func);
@@ -111,7 +111,7 @@ namespace Lua
 			{
 				public int CompareTo(Opt rhs)
 				{
-					int result = type.CompareTo(rhs.type);
+					int result = string.Compare(type, rhs.type, StringComparison.Ordinal);
 					if (result != 0)
 						return result;
 					if (param == rhs.param)
@@ -581,7 +581,7 @@ namespace Lua
 											ret = fn.ret,
 											param = fn.args.Length > 1 ? fn.args[1].type : null,
 										};
-										if (opts.FindIndex((m) => { return m.type == val.type; }) >= 0)
+										if (opts.FindIndex(m => { return m.type == val.type; }) >= 0)
 										{
 											opts.Add(val);
 										}
@@ -602,7 +602,7 @@ namespace Lua
 												ret = fn.ret,
 												param = fn.args.Length > 1 ? fn.args[1].type : null,
 											};
-											if (opts.FindIndex((m) => { return m.type == val.type; }) >= 0)
+											if (opts.FindIndex(m => { return m.type == val.type; }) >= 0)
 											{
 												opts.Add(val);
 											}
@@ -620,14 +620,14 @@ namespace Lua
 											ret = fn.ret,
 											param = fn.args.Length > 0 ? fn.args[0].type : null,
 										};
-										if (opts.FindIndex((m) => { return m.type == val.type; }) >= 0)
+										if (opts.FindIndex(m => { return m.type == val.type; }) >= 0)
 										{
 											opts.Add(val);
 										}
 										continue;
 									}
 								}
-								if (methods.FindIndex((m) => { return m.name == method.Name; }) >= 0)
+								if (methods.FindIndex(m => { return m.name == method.Name; }) >= 0)
 								{
 									ClassType.Method val = new ClassType.Method
 									{
