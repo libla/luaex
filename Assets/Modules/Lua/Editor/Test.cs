@@ -5,6 +5,13 @@ using System.Text;
 
 namespace Lua
 {
+	public enum TestEnum
+	{
+		Test1,
+		Test2,
+		Test3,
+	}
+
 	public abstract class TTT
 	{
 		public abstract void Add();

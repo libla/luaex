@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Reflection;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -9,14 +10,26 @@ namespace Lua
 		public const string Path = "/Source/GameToLua.cs";
 		public const string Module = "game";
 
-		public static readonly List<BuildType> Buildtypes = new List<BuildType>
-		{
-			T(typeof(TTT)),
-			T(typeof(Test)),
+		public static readonly BuildType[] Buildtypes = {
+			T(typeof(TestEnum)),
+			//T(typeof(TTT)),
+			T(typeof(Test))
 		};
 
-		public static readonly List<string> Filters = new List<string>
-		{
+		public static readonly Type[] StaticTypes = {        
+			typeof(Application),
+			typeof(Time),
+			typeof(Screen),
+			typeof(SleepTimeout),
+			typeof(Input),
+			typeof(Resources),
+			typeof(Physics),
+			typeof(RenderSettings),
+			typeof(QualitySettings),
+			typeof(GL),
+		};
+
+		public static readonly string[] Filters = {
 			"System.String.Chars",
 			"UnityEngine.AnimationClip.averageDuration",
 			"UnityEngine.AnimationClip.averageAngularSpeed",
@@ -39,21 +52,18 @@ namespace Lua
 			"UnityEngine.Application.ExternalEval",
 		};
 
-		public static readonly List<Type> DropTypes = new List<Type>
-		{
+		public static readonly Type[] DropTypes = {
 			typeof(Motion),                                     //很多平台只是空类
-			typeof(System.Array),
-			typeof(System.Delegate),
-			typeof(System.Enum),
-			typeof(System.Reflection.MemberInfo),
+			typeof(Array),
+			typeof(Delegate),
+			typeof(Enum),
+			typeof(MemberInfo),
 		};
 
-		public static readonly List<Type> BaseTypes = new List<Type>
-		{
+		public static readonly Type[] BaseTypes = {
 			typeof(UnityEngine.Object),
 			typeof(object),
 			typeof(ValueType),
-			typeof(Type),
 		};
 
 		public class BuildType

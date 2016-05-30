@@ -43,6 +43,20 @@ namespace Lua
 			{"op_UnaryNegation", "__unm"},
 		};
 
+		private static readonly Dictionary<Type, int> typeSize = new Dictionary<Type, int>()
+		{
+			{ typeof(byte), 3 },
+			{ typeof(sbyte), 4 },
+			{ typeof(ushort),5 },
+			{ typeof(short), 6 },
+			{ typeof(uint), 7 },
+			{ typeof(int), 8 },
+			{ typeof(ulong), 9 },
+			{ typeof(long), 10 },
+			{ typeof(float), 11 },
+			{ typeof(double), 12 },
+		};
+
 		private static readonly Dictionary<Type, Define.BuildType> Types = new Dictionary<Type, Define.BuildType>();
 
 		private struct Function : IComparable<Function>
@@ -161,11 +175,11 @@ namespace Lua
 				if (pinfos[i].ParameterType.IsByRef)
 				{
 					args[index].type = pinfos[i].ParameterType.GetElementType();
-					args[index].mode = pinfos[i].GetCustomAttributes(typeof(System.Runtime.InteropServices.OutAttribute), true).Length > 0 ?
+					args[index].mode = pinfos[i].GetCustomAttributes(typeof(OutAttribute), true).Length > 0 ?
 						Function.ParamMode.OUT :
 						Function.ParamMode.REF;
 				}
-				else if (pinfos[i].ParameterType.IsArray && pinfos[i].GetCustomAttributes(typeof(System.ParamArrayAttribute), true).Length > 0)
+				else if (pinfos[i].ParameterType.IsArray && pinfos[i].GetCustomAttributes(typeof(ParamArrayAttribute), true).Length > 0)
 				{
 					args[index].mode = Function.ParamMode.PARAMS;
 				}
@@ -182,6 +196,12 @@ namespace Lua
 			List<Define.BuildType> ordertypes = new List<Define.BuildType>();
 			LinkedList<Type> temptypes = new LinkedList<Type>();
 
+			typeset.Clear();
+			enums.Clear();
+			delegates.Clear();
+			types.Clear();
+			basetypes.Clear();
+
 			// 遍历类型，按父子类型排序
 			foreach (var type in Types)
 			{
@@ -192,7 +212,7 @@ namespace Lua
 				{
 					if (yieldtypes.ContainsKey(tt))
 						break;
-					if (Define.DropTypes.IndexOf(tt) >= 0)
+					if (Array.IndexOf(Define.DropTypes, tt) >= 0)
 						continue;
 					if (!Types.ContainsKey(tt))
 					{
@@ -213,7 +233,7 @@ namespace Lua
 
 			ordertypes = ordertypes.OrderBy(type =>
 			{
-				return type.type.IsSealed && type.type.IsAbstract ? 1 : 0;
+				return IsStaticType(type.type) ? 1 : 0;
 			}).ToList();
 
 			// 把类型按枚举、委托、结构和类归类好
@@ -285,6 +305,8 @@ namespace Lua
 				}
 				if (!typeset.ContainsKey(type))
 				{
+					if (Array.IndexOf(Define.DropTypes, type) < 0)
+						return false;
 					string name = "";
 					for (Type parent = type; parent != null; parent = parent.DeclaringType)
 					{
@@ -544,7 +566,7 @@ namespace Lua
 						}
 					}
 				}
-				if (type.BaseType != null)
+				if (type.BaseType != null && !IsStaticType(type))
 				{
 					foreach (MethodInfo method in type.GetMethods(BindingFlags.Default | BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance))
 					{
@@ -679,7 +701,10 @@ namespace Lua
 				opts.Clear();
 			}
 
-			FileStream stream = new FileStream(Application.dataPath + Define.Path + ".txt", FileMode.Create);
+			string path = Application.dataPath + Define.Path;
+			if (!Directory.Exists(Path.GetDirectoryName(path)))
+				Directory.CreateDirectory(Path.GetDirectoryName(path));
+			FileStream stream = new FileStream(path + ".txt", FileMode.Create);
 			stream.WriteByte(0xEF);
 			stream.WriteByte(0xBB);
 			stream.WriteByte(0xBF);
@@ -689,10 +714,12 @@ namespace Lua
 			CodePackage package = new CodePackage("ToLua");
 			CodeClassDefine classdef = new CodeClassDefine("Export");
 			code.Import("System");
+			code.Import("Lua");
 			code.Add(package);
 			package.Add(classdef);
 			CodeTypeMethod register = new CodeTypeMethod("Register");
 			classdef.Add(register);
+			register.modify = "public static";
 			register.method.Return(new CodeTypeExp(typeof(int)));
 			register.method.param.Add(new CodeParam(typeof(IntPtr), "L"));
 			CodeBlockStat registers = register.method.block;
@@ -713,6 +740,40 @@ namespace Lua
 					CodeMethodInvokeExp value = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "luaEX_value");
 					registers.stats.Add(new CodeExpStat(value));
 					value.param.Add(new CodeParamExp("L"));
+					value.param.Add(new CodeLiteralExp(names[j]));
+					value.param.Add(new CodeLiteralExp(names[j].Length));
+					CodeTypeMethod tolua = new CodeTypeMethod(name.Replace(".", "_") + "_" + names[j] + "_ToLua");
+					classdef.Add(tolua);
+					value.param.Add(new CodeThisMemberExp(tolua.name));
+					tolua.modify = "public static";
+					tolua.attributes.Add("MonoPInvokeCallbackAttribute(typeof(lua_CFunction))");
+					tolua.method.Return(new CodeTypeExp(typeof(int)));
+					tolua.method.param.Add(new CodeParam(typeof(IntPtr), "L"));
+					List<CodeStat> stats = tolua.method.block.stats;
+					CodeVariable state = new CodeVariable(new CodeTypeExp(typeof(State)), "state",
+												new CodeCastExp(typeof(State), new CodeParamExp("L")));
+					stats.Add(new CodeExpStat(new CodeVariableDefineExp(state)));
+					CodeTypeMethodInvokeExp pushtype = new CodeTypeMethodInvokeExp(new CodeVariableExp(state), "PushType");
+					stats.Add(new CodeExpStat(pushtype));
+					pushtype.param.Add(new CodeMemberExp(new CodeTypeExp(type), names[j]));
+					CodeTypeMethodInvokeExp pushname = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "lua_pushlstring");
+					stats.Add(new CodeExpStat(pushname));
+					pushname.param.Add(new CodeParamExp("L"));
+					CodeArrayInitExp array = new CodeArrayInitExp(typeof(byte));
+					pushname.param.Add(array);
+					foreach (byte c in Encoding.UTF8.GetBytes(names[j]))
+					{
+						array.list.Add(new CodeLiteralExp(c));
+					}
+					CodeTypeMethodInvokeExp pushvalue = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "lua_pushvalue");
+					stats.Add(new CodeExpStat(pushvalue));
+					pushvalue.param.Add(new CodeParamExp("L"));
+					pushvalue.param.Add(new CodeLiteralExp(-2));
+					CodeTypeMethodInvokeExp rawset = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "lua_rawset");
+					stats.Add(new CodeExpStat(rawset));
+					rawset.param.Add(new CodeParamExp("L"));
+					rawset.param.Add(new CodeLiteralExp(1));
+					stats.Add(new CodeReturnStat(new CodeLiteralExp(1)));
 				}
 
 				CodeMethodInvokeExp nexttype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "luaEX_nexttype");
@@ -798,7 +859,7 @@ namespace Lua
 
 		static Parse()
 		{
-			for (int i = 0; i < Define.Filters.Count; ++i)
+			for (int i = 0; i < Define.Filters.Length; ++i)
 			{
 				string filter = Define.Filters[i];
 				if (filter.StartsWith("~"))
@@ -806,14 +867,14 @@ namespace Lua
 				else
 					matchfilters[filter] = true;
 			}
-			for (int i = 0; i < Define.Buildtypes.Count; i++)
+			for (int i = 0; i < Define.Buildtypes.Length; i++)
 			{
 				Define.BuildType buildtype = Define.Buildtypes[i];
 				if (buildtype.type.IsGenericTypeDefinition)
 					continue;
 				Types[buildtype.type] = buildtype;
 			}
-			for (int i = 0; i < Define.BaseTypes.Count; i++)
+			for (int i = 0; i < Define.BaseTypes.Length; i++)
 			{
 				Type type = Define.BaseTypes[i];
 				if (!Types.ContainsKey(type))
@@ -884,6 +945,13 @@ namespace Lua
 				}
 			}
 			return false;
+		}
+
+		private static bool IsStaticType(Type type)
+		{
+			if (type.IsSealed && type.IsAbstract)
+				return true;
+			return Array.IndexOf(Define.StaticTypes, type) >= 0;
 		}
 
 		private static bool IsObsolete(MemberInfo member)

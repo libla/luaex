@@ -163,7 +163,8 @@ namespace Lua
 
 		public bool PushType(char n)
 		{
-			API.lua_pushnumber(L, n);
+			string s = new string(new char[] {n});
+			API.lua_pushstring(L, s);
 			return true;
 		}
 
@@ -423,9 +424,12 @@ namespace Lua
 
 		public bool ToType(int idx, ref char n)
 		{
-			if (!API.lua_isnumber(L, idx))
+			string s = null;
+			if (!ToType(idx, ref s))
 				return false;
-			n = (char)API.lua_tointeger(L, idx);
+			if (s == null || s.Length != 1)
+				return false;
+			n = s[0];
 			return true;
 		}
 
@@ -466,36 +470,63 @@ namespace Lua
 				s = str;
 				return true;
 			}
+			if (API.lua_isnil(L, idx))
+			{
+				s = null;
+				return true;
+			}
 			return false;
 		}
 
 		public bool ToType(int idx, ref ulong l)
 		{
-			if (!API.lua_isstring(L, idx))
-				return false;
-			int len;
-			IntPtr ptr = API.lua_tolstring(L, idx, out len);
-			if (ptr == IntPtr.Zero || len != 9)
-				return false;
-			byte[] bytes = new byte[9];
-			Marshal.Copy(ptr, bytes, 0, 9);
-			if (bytes[0] != 76)
-				return false;
-			l = 0;
-			for (int i = 1; i < 9; ++i)
+			int type = API.lua_type(L, idx);
+			switch (type)
 			{
-				l = (l << 8) + bytes[i];
+			case Consts.LUA_TNUMBER:
+				double d = 0;
+				if (!ToType(idx, ref d) || d < ulong.MinValue || d > ulong.MaxValue)
+					return false;
+				l = (ulong)d;
+				return true;
+			case Consts.LUA_TSTRING:
+				int len;
+				IntPtr ptr = API.lua_tolstring(L, idx, out len);
+				if (ptr == IntPtr.Zero || len != 9)
+					return false;
+				byte[] bytes = new byte[9];
+				Marshal.Copy(ptr, bytes, 0, 9);
+				if (bytes[0] != 76)
+					return false;
+				l = 0;
+				for (int i = 1; i < 9; ++i)
+				{
+					l = (l << 8) + bytes[i];
+				}
+				return true;
 			}
-			return true;
+			return false;
 		}
 
 		public bool ToType(int idx, ref long l)
 		{
-			ulong u = 0;
-			if (!ToType(idx, ref u))
-				return false;
-			l = (long)u;
-			return true;
+			int type = API.lua_type(L, idx);
+			switch (type)
+			{
+			case Consts.LUA_TNUMBER:
+				double d = 0;
+				if (!ToType(idx, ref d) || d < long.MinValue || d > long.MaxValue)
+					return false;
+				l = (long)d;
+				return true;
+			case Consts.LUA_TSTRING:
+				ulong u = 0;
+				if (!ToType(idx, ref u))
+					return false;
+				l = (long)u;
+				return true;
+			}
+			return false;
 		}
 
 		public bool ToType(int idx, ref byte[] bytes)

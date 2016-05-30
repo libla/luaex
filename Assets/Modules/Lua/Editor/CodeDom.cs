@@ -1399,6 +1399,42 @@ namespace CodeDom
 		}
 	}
 
+	public class CodeArrayInitExp : CodeExp
+	{
+		public CodeArrayInitExp(CodeTypeExp type)
+		{
+			_type = type;
+			_list = new List<CodeExp>();
+		}
+
+		protected readonly CodeExp _type;
+		protected readonly List<CodeExp> _list;
+
+		public List<CodeExp> list
+		{
+			get { return _list; }
+		}
+
+		public override void Compile(TextWriter writer, string indent, CodeTypeDefine ctype,
+									IDictionary<string, bool> namespaces)
+		{
+			writer.Write("new ");
+			_type.Compile(writer, indent, ctype, namespaces);
+			writer.Write("[] {");
+			if (_list.Count > 0)
+			{
+				writer.Write(" ");
+				_list[0].Compile(writer, indent, ctype, namespaces);
+				for (int i = 1; i < _list.Count; i++)
+				{
+					writer.Write(", ");
+					_list[i].Compile(writer, indent, ctype, namespaces);
+				}
+			}
+			writer.Write(" }");
+		}
+	}
+
 	public abstract class CodeMethodInvokeExp : CodeExp
 	{
 		protected CodeMethodInvokeExp()

@@ -259,7 +259,7 @@ namespace Lua
 			return result;
 		}
 
-		public new static ValueObject<T> Add()
+		public static ValueObject<T> Add()
 		{
 			ValueObject<T> result = list.Count == 0 ? new ValueObject<T>() : list.Pop();
 			return result;
@@ -393,8 +393,6 @@ namespace Lua
         public static extern void lua_pushinteger(IntPtr L, int n);
         [DllImport(LIB, CallingConvention = CallingConvention.Cdecl)]
 		private static extern void lua_pushlstring(IntPtr L, byte[] s, IntPtr l);
-        [DllImport(LIB, CallingConvention = CallingConvention.Cdecl)]
-        public static extern void lua_pushstring(IntPtr L, byte[] s);
         [DllImport(LIB, CallingConvention = CallingConvention.Cdecl)]
         public static extern void lua_pushcclosure(IntPtr L, lua_CFunction fn, int n);
         [DllImport(LIB, CallingConvention = CallingConvention.Cdecl)]
