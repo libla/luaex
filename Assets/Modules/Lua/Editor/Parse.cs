@@ -211,6 +211,11 @@ namespace Lua
 				}
 			}
 
+			ordertypes = ordertypes.OrderBy(type =>
+			{
+				return type.type.IsSealed && type.type.IsAbstract ? 1 : 0;
+			}).ToList();
+
 			// 把类型按枚举、委托、结构和类归类好
 			foreach (var buildtype in ordertypes)
 			{
@@ -268,16 +273,15 @@ namespace Lua
 			{
 				if (!typeset.ContainsKey(type))
 				{
-					//typeset[type] = string.Format("{0}.{1}", type.Namespace, type.Name);
 					typeset.Add(type, "");
 				}
 			}
 
 			Func<Type, bool> verify = delegate(Type type)
 			{
-				if (type.IsByRef || type.IsArray)
+				while (type.IsByRef || type.IsArray)
 				{
-					type = type.GetElementType() ?? type;
+					type = type.GetElementType();
 				}
 				if (!typeset.ContainsKey(type))
 				{
@@ -693,25 +697,45 @@ namespace Lua
 			register.method.param.Add(new CodeParam(typeof(IntPtr), "L"));
 			CodeBlockStat registers = register.method.block;
 
+			for (int i = 0; i < enums.Count; i++)
+			{
+				Type type = enums[i];
+				string name = typeset[type];
+				string prefix = name.Replace(".", "_");
+				CodeMethodInvokeExp newtype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "luaEX_newtype");
+				registers.stats.Add(new CodeExpStat(newtype));
+				newtype.param.Add(new CodeParamExp("L"));
+				newtype.param.Add(new CodeLiteralExp(name));
+				newtype.param.Add(new CodeTypeOfExp(new CodeTypeExp(type)));
+				string[] names = Enum.GetNames(type);
+				for (int j = 0; j < names.Length; j++)
+				{
+					CodeMethodInvokeExp value = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "luaEX_value");
+					registers.stats.Add(new CodeExpStat(value));
+					value.param.Add(new CodeParamExp("L"));
+				}
+
+				CodeMethodInvokeExp nexttype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "luaEX_nexttype");
+				registers.stats.Add(new CodeExpStat(nexttype));
+				nexttype.param.Add(new CodeParamExp("L"));
+			}
+
 			for (int i = 0; i < classtypes.Count; i++)
 			{
 				ClassType type = classtypes[i];
 				string name = typeset[type.type];
 				string prefix = name.Replace(".", "_");
-				CodeMethodInvokeExp newtype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(Lua.API)), "tolua_newtype");
-				newtype.param.Add(new CodeParamExp("L"));
-				if (!string.IsNullOrEmpty(name))
-				{
-					newtype.param.Add(new CodeLiteralExp(name));
-				}
-				newtype.param.Add(new CodeTypeOfExp(new CodeTypeExp(type.type)));
+				CodeMethodInvokeExp newtype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "luaEX_newtype");
 				registers.stats.Add(new CodeExpStat(newtype));
+				newtype.param.Add(new CodeParamExp("L"));
+				newtype.param.Add(new CodeLiteralExp(string.IsNullOrEmpty(name) ? "" : name));
+				newtype.param.Add(new CodeTypeOfExp(new CodeTypeExp(type.type)));
 				if (type.parent != null)
 				{
-					CodeMethodInvokeExp basetype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(Lua.API)), "tolua_basetype");
+					CodeMethodInvokeExp basetype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "luaEX_basetype");
+					registers.stats.Add(new CodeExpStat(basetype));
 					basetype.param.Add(new CodeParamExp("L"));
 					basetype.param.Add(new CodeTypeOfExp(new CodeTypeExp(type.parent)));
-					registers.stats.Add(new CodeExpStat(basetype));
 				}
 				if (!string.IsNullOrEmpty(name) && type.news.Length > 0)
 				{
@@ -740,21 +764,21 @@ namespace Lua
 
 					CodeCatchStat catchstat = new CodeCatchStat(new CodeTypeExp(typeof(Exception)), "e");
 					trystat.catchstat.Add(catchstat);
-					CodeMethodInvokeExp error = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(Lua.API)), "tolua_error");
+					CodeMethodInvokeExp error = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "luaEX_error");
 					error.param.Add(new CodeParamExp("L"));
 					error.param.Add(new CodeParamExp("e"));
 					catchstat.stat.stats.Add(new CodeReturnStat(error));
 					fnstat.stats.Add(trystat);
-					CodeMethodInvokeExp construct = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(Lua.API)), "tolua_construct");
+					CodeMethodInvokeExp construct = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "luaEX_construct");
+					registers.stats.Add(new CodeExpStat(construct));
 					construct.param.Add(new CodeParamExp("L"));
 					construct.param.Add(new CodeThisMemberExp(fnname));
-					registers.stats.Add(new CodeExpStat(construct));
 					classdef.Add(fn);
 				}
 
-				CodeMethodInvokeExp nexttype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(Lua.API)), "tolua_nexttype");
-				nexttype.param.Add(new CodeParamExp("L"));
+				CodeMethodInvokeExp nexttype = new CodeTypeMethodInvokeExp(new CodeTypeExp(typeof(API)), "luaEX_nexttype");
 				registers.stats.Add(new CodeExpStat(nexttype));
+				nexttype.param.Add(new CodeParamExp("L"));
 
 				file.WriteLine("Type: {0}", typeset[type.type]);
 				for (int j = 0; j < type.methods.Length; j++)
