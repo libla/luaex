@@ -1191,6 +1191,13 @@ namespace CodeDom
 				quote = quote.Replace("\v", "\\v");
 				writer.Write("\"{0}\"", quote);
 			}
+			else if (literal is bool)
+			{
+				if ((bool)literal)
+					writer.Write("true");
+				else
+					writer.Write("false");
+			}
 			else
 			{
 				writer.Write(literal.ToString());

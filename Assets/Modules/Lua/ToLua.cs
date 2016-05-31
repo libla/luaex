@@ -73,6 +73,12 @@ namespace Lua
 			luaEX_newtype(L, bytes, Tools.Type2IntPtr(type));
 		}
 
+		public static void luaEX_value(IntPtr L, string s, lua_CFunction fn)
+		{
+			byte[] bytes = Encoding.UTF8.GetBytes(s);
+			luaEX_value(L, bytes, (uint)bytes.Length, fn);
+		}
+
 		public static void luaEX_basetype(IntPtr L, Type type)
 		{
 			luaEX_basetype(L, Tools.Type2IntPtr(type));
