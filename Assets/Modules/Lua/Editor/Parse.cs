@@ -43,18 +43,16 @@ namespace Lua
 			{"op_UnaryNegation", "__unm"},
 		};
 
-		private static readonly Dictionary<Type, int> typeSize = new Dictionary<Type, int>()
+		private static readonly Type[] numbertypes =
 		{
-			{ typeof(byte), 3 },
-			{ typeof(sbyte), 4 },
-			{ typeof(ushort),5 },
-			{ typeof(short), 6 },
-			{ typeof(uint), 7 },
-			{ typeof(int), 8 },
-			{ typeof(ulong), 9 },
-			{ typeof(long), 10 },
-			{ typeof(float), 11 },
-			{ typeof(double), 12 },
+			typeof(byte),
+			typeof(sbyte),
+			typeof(short),
+			typeof(ushort),
+			typeof(int),
+			typeof(uint),
+			typeof(float),
+			typeof(double),
 		};
 
 		private static readonly Dictionary<Type, Define.BuildType> Types = new Dictionary<Type, Define.BuildType>();
@@ -63,22 +61,36 @@ namespace Lua
 		{
 			public int CompareTo(Function rhs)
 			{
+				bool lparams = args.Length > 0 && args[args.Length - 1].mode == ParamMode.PARAMS;
+				bool rparams = rhs.args.Length > 0 && rhs.args[rhs.args.Length - 1].mode == ParamMode.PARAMS;
+				if (lparams)
+				{
+					if (!rparams)
+						return 1.CompareTo(-1);
+				}
+				if (rparams)
+					return -1.CompareTo(1);
 				int result = -args.Length.CompareTo(rhs.args.Length);
 				if (result != 0)
 					return result;
 				for (int i = 0; i < args.Length; ++i)
 				{
-					if (args[i].type != rhs.args[i].type)
+					int lidx = Array.IndexOf(numbertypes, args[i].type);
+					int ridx = Array.IndexOf(numbertypes, rhs.args[i].type);
+					if (lidx != -1)
 					{
-						if (args[i].type == typeof(bool))
+						if (ridx != -1)
 						{
-							return 1;
+							result = lidx.CompareTo(ridx);
+							if (result != 0)
+								return result;
+							continue;
 						}
-						if (rhs.args[i].type == typeof(bool))
-						{
-							return -1;
-						}
+						return -1.CompareTo(1);
 					}
+					if (ridx == -1)
+						continue;
+					return 1.CompareTo(-1);
 				}
 				return 0;
 			}
