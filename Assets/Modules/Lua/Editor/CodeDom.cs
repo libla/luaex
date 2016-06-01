@@ -951,8 +951,9 @@ namespace CodeDom
 		public override void CompileMember(TextWriter writer, string indent, CodeTypeDefine ctype,
 											IDictionary<string, bool> namespaces)
 		{
-			writer.WriteLine(ctype.name);
+			writer.Write(ctype.name);
 			_method.CompileParam(writer, indent, ctype, namespaces);
+			writer.WriteLine();
 			_method.CompileBody(writer, indent, ctype, namespaces);
 		}
 	}

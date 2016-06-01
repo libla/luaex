@@ -27,8 +27,8 @@ namespace Lua
 			typeof(sbyte), typeof(byte), typeof(short),
 			typeof(ushort), typeof(int), typeof(uint),
 			typeof(long), typeof(ulong), typeof(char),
-			typeof(float), typeof(double), typeof(object),
-			typeof(string),
+			typeof(float), typeof(double), typeof(string),
+			typeof(object), typeof(ValueType),
 		};
 
 		private static readonly Dictionary<string, string> operators = new Dictionary<string, string>()
@@ -268,14 +268,7 @@ namespace Lua
 				}
 				foreach (var tt in temptypes)
 				{
-					if (newTypes.ContainsKey(tt))
-					{
-						ordertypes.Add(newTypes[tt]);
-					}
-					else
-					{
-						ordertypes.Add(Types[tt]);
-					}
+					ordertypes.Add(newTypes.ContainsKey(tt) ? newTypes[tt] : Types[tt]);
 				}
 			}
 
@@ -762,6 +755,7 @@ namespace Lua
 			CodePackage package = new CodePackage("ToLua");
 			CodeClassDefine classdef = new CodeClassDefine("Export");
 			code.Import("System");
+			code.Import("System.Collections.Generic");
 			code.Import("Lua");
 			code.Add(package);
 			package.Add(classdef);
@@ -777,7 +771,10 @@ namespace Lua
 				CodeTypeNew typenew = new CodeTypeNew();
 				classdef.Add(typenew);
 				typenew.modify = "static";
-				CodeVariableExp dict = new CodeVariableExp(new CodeVariable(new CodeTypeExp(Tools.DelegateFactory.GetType()), "dict", new CodeMemberExp(new CodeTypeExp(typeof(Tools)), "DelegateFactory")));
+				CodeVariable dict = new CodeVariable(new CodeTypeExp(Tools.DelegateFactory.GetType()), "dict",
+													new CodeMemberExp(new CodeTypeExp(typeof(Tools)), "DelegateFactory"));
+				CodeVariableExp dictexp = new CodeVariableExp(dict);
+				typenew.method.block.stats.Add(new CodeExpStat(new CodeVariableDefineExp(dict)));
 				for (int i = 0; i < delegates.Count; i++)
 				{
 					Type type = delegates[i];
@@ -785,13 +782,12 @@ namespace Lua
 					string prefix = name.Replace(".", "_");
 					CodeTypeMethod tolua = new CodeTypeMethod("Create_" + prefix + "_FromLua");
 					classdef.Add(tolua);
-					tolua.modify = "public static";
-					tolua.attributes.Add("MonoPInvokeCallbackAttribute(typeof(lua_CFunction))");
+					tolua.modify = "private static";
 					tolua.method.Return(new CodeTypeExp(typeof(Delegate)));
-					tolua.method.param.Add(new CodeParam(typeof(Function), "f"));
+					tolua.method.param.Add(new CodeParam(typeof(Tools.Function), "f"));
 					List<CodeStat> stats = tolua.method.block.stats;
 					stats.Add(new CodeReturnStat(new CodeLiteralExp(null)));
-					CodeMethodInvokeExp method = new CodeTypeMethodInvokeExp(dict, "Add");
+					CodeMethodInvokeExp method = new CodeTypeMethodInvokeExp(dictexp, "Add");
 					typenew.method.block.stats.Add(new CodeExpStat(method));
 					method.param.Add(new CodeTypeOfExp(new CodeTypeExp(type)));
 					method.param.Add(new CodeThisMemberExp(tolua.name));
