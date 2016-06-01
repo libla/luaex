@@ -834,9 +834,9 @@ namespace Lua
 
 	public static partial class Tools
 	{
-		private static readonly Dictionary<Type, Func<Function, Delegate>> createdelegates = new Dictionary<Type, Func<Function, Delegate>>();
+		public static readonly Dictionary<Type, Func<Function, Delegate>> DelegateFactory = new Dictionary<Type, Func<Function, Delegate>>();
 
-		private class Function
+		public class Function
 		{
 			private readonly int refidx;
 			private readonly State refstate;
@@ -871,7 +871,7 @@ namespace Lua
 		public static Delegate CreateDelegate(Type type, IntPtr L, int index)
 		{
 			Func<Function, Delegate> f;
-			if (!createdelegates.TryGetValue(type, out f))
+			if (!DelegateFactory.TryGetValue(type, out f))
 				throw new NotImplementedException(RunTimeType.Name[type]);
 			return f(new Function(L, index));
 		}

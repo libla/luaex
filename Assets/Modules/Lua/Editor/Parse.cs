@@ -1,4 +1,5 @@
 ﻿using System;
+using System.CodeDom;
 using System.Reflection;
 using System.IO;
 using System.Linq;
@@ -243,6 +244,7 @@ namespace Lua
 			basetypes.Clear();
 
 			// 遍历类型，按父子类型排序
+			Dictionary<Type, Define.BuildType> newTypes = new Dictionary<Type, Define.BuildType>();
 			foreach (var type in Types)
 			{
 				Type t = type.Key;
@@ -253,9 +255,9 @@ namespace Lua
 						break;
 					if (Array.IndexOf(Define.DropTypes, tt) >= 0)
 						continue;
-					if (!Types.ContainsKey(tt))
+					if (!Types.ContainsKey(tt) && !newTypes.ContainsKey(tt))
 					{
-						Types[tt] = new Define.BuildType { type = tt, name = "", module = "" };
+						newTypes[tt] = new Define.BuildType { type = tt, name = "", module = "" };
 						yieldtypes[tt] = false;
 					}
 					else
@@ -266,7 +268,14 @@ namespace Lua
 				}
 				foreach (var tt in temptypes)
 				{
-					ordertypes.Add(Types[tt]);
+					if (newTypes.ContainsKey(tt))
+					{
+						ordertypes.Add(newTypes[tt]);
+					}
+					else
+					{
+						ordertypes.Add(Types[tt]);
+					}
 				}
 			}
 
@@ -762,6 +771,32 @@ namespace Lua
 			register.method.Return(new CodeTypeExp(typeof(int)));
 			register.method.param.Add(new CodeParam(typeof(IntPtr), "L"));
 			CodeBlockStat registers = register.method.block;
+
+			if (delegates.Count > 0)
+			{
+				CodeTypeNew typenew = new CodeTypeNew();
+				classdef.Add(typenew);
+				typenew.modify = "static";
+				CodeVariableExp dict = new CodeVariableExp(new CodeVariable(new CodeTypeExp(Tools.DelegateFactory.GetType()), "dict", new CodeMemberExp(new CodeTypeExp(typeof(Tools)), "DelegateFactory")));
+				for (int i = 0; i < delegates.Count; i++)
+				{
+					Type type = delegates[i];
+					string name = typeset[type];
+					string prefix = name.Replace(".", "_");
+					CodeTypeMethod tolua = new CodeTypeMethod("Create_" + prefix + "_FromLua");
+					classdef.Add(tolua);
+					tolua.modify = "public static";
+					tolua.attributes.Add("MonoPInvokeCallbackAttribute(typeof(lua_CFunction))");
+					tolua.method.Return(new CodeTypeExp(typeof(Delegate)));
+					tolua.method.param.Add(new CodeParam(typeof(Function), "f"));
+					List<CodeStat> stats = tolua.method.block.stats;
+					stats.Add(new CodeReturnStat(new CodeLiteralExp(null)));
+					CodeMethodInvokeExp method = new CodeTypeMethodInvokeExp(dict, "Add");
+					typenew.method.block.stats.Add(new CodeExpStat(method));
+					method.param.Add(new CodeTypeOfExp(new CodeTypeExp(type)));
+					method.param.Add(new CodeThisMemberExp(tolua.name));
+				}
+			}
 
 			for (int i = 0; i < enums.Count; i++)
 			{
