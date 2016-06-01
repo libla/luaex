@@ -7,13 +7,12 @@ namespace Lua
 {
 	public static class Define
 	{
-		public const string Path = "/Source/GameToLua.cs";
+		public const string Path = "/GameToLua.cs";
 		public const string Module = "game";
 
 		public static readonly BuildType[] Buildtypes = {
 			T(typeof(TestEnum)),
-			//T(typeof(TTT)),
-			T(typeof(Test))
+			T(typeof(TestDelegate)),
 		};
 
 		public static readonly Type[] StaticTypes = {        
@@ -61,9 +60,6 @@ namespace Lua
 		};
 
 		public static readonly Type[] BaseTypes = {
-			typeof(UnityEngine.Object),
-			typeof(object),
-			typeof(ValueType),
 		};
 
 		public class BuildType

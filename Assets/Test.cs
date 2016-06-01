@@ -12,6 +12,8 @@ namespace Lua
 		Test3,
 	}
 
+	public delegate void TestDelegate(int i);
+
 	public abstract class TTT
 	{
 		public abstract void Add();
